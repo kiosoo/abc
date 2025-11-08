@@ -80,17 +80,11 @@ export const generateSpeech = async (
     try {
         const ai = getAiClient(apiKey);
         
-        // Use 'any' for speechConfig to accommodate the 'enableWordTimeOffsets' property.
-        const speechConfig: any = {
+        const speechConfig = {
             voiceConfig: {
                 prebuiltVoiceConfig: { voiceName: voice },
             },
         };
-
-        if (requestTimestamps) {
-            // Correct parameter name for requesting word-level timestamps.
-            speechConfig.enableWordTimeOffsets = true;
-        }
 
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
