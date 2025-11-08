@@ -10,14 +10,6 @@ import { User, VercelRequest, VercelResponse } from '@/types';
 // FIX: Define an explicit type for our session data.
 type AppSessionData = IronSessionData & Partial<Omit<User, 'password'>>;
 
-export const sessionOptions: SessionOptions = {
-  password: process.env.SECRET_COOKIE_PASSWORD as string,
-  cookieName: 'gemini-app-session',
-  cookieOptions: {
-    secure: process.env.NODE_ENV === 'production',
-  },
-};
-
 type ApiHandler = (
   req: VercelRequest,
   res: VercelResponse,
@@ -47,9 +39,18 @@ export function apiHandler(handlers: Handlers) {
         return res.status(500).json({ message });
       }
 
+      // --- Session Options defined inside handler ---
+      // This ensures environment variables are read at request time, not module load time,
+      // preventing crashes in serverless environments.
+      const sessionOptions: SessionOptions = {
+        password: secret,
+        cookieName: 'gemini-app-session',
+        cookieOptions: {
+          secure: process.env.NODE_ENV === 'production',
+        },
+      };
+
       // --- Centralized Session Management ---
-      // The generic type is not needed here because we are using module augmentation for IronSessionData.
-      // getIronSession will return an object of type IronSession<IronSessionData>.
       // FIX: Pass the explicit session data type to getIronSession.
       const session = await getIronSession<AppSessionData>(req, res, sessionOptions);
 
