@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { GoogleGenAI } from '@google/genai';
 import { Notification, User, SubscriptionTier } from '@/types';
 import { TTS_VOICES, DEFAULT_VOICE, LONG_TEXT_CHUNK_SIZE, TIER_LIMITS } from '@/constants';
 import { generateSpeech } from '@/services/geminiService';
@@ -87,6 +88,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
         addLog('Bắt đầu quá trình tổng hợp...');
 
         try {
+            const ai = new GoogleGenAI({ apiKey });
             const textToSynthesize = text.trim();
             const textChunks = chunkText(textToSynthesize, LONG_TEXT_CHUNK_SIZE);
             const totalChunks = textChunks.length;
@@ -104,7 +106,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
                 setStatusMessage(logMessage);
                 addLog(logMessage);
                 
-                const audioContent = await generateSpeech(chunk, selectedVoice === 'auto' ? 'Kore' : selectedVoice, apiKey);
+                const audioContent = await generateSpeech(ai, chunk, selectedVoice === 'auto' ? 'Kore' : selectedVoice);
                 const decoded = decode(audioContent);
                 audioBlobs.push(createWavBlob(decoded));
                 

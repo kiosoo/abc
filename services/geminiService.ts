@@ -1,12 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
-export const generateContent = async (prompt: string, isThinkingMode: boolean, apiKey: string): Promise<string> => {
-  if (!apiKey) {
-    throw new Error('Vui lòng cung cấp API Key trong phần cài đặt.');
-  }
-
+// This function now accepts an initialized GoogleGenAI instance.
+export const generateContent = async (ai: GoogleGenAI, prompt: string, isThinkingMode: boolean): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey });
     const modelName = isThinkingMode ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
 
     const response = await ai.models.generateContent({
@@ -28,13 +24,9 @@ export const generateContent = async (prompt: string, isThinkingMode: boolean, a
   }
 };
 
-export const generateSpeech = async (text: string, voice: string = 'Kore', apiKey: string): Promise<string> => {
-    if (!apiKey) {
-      throw new Error('Vui lòng cung cấp API Key trong phần cài đặt.');
-    }
-    
+// This function now accepts an initialized GoogleGenAI instance.
+export const generateSpeech = async (ai: GoogleGenAI, text: string, voice: string = 'Kore'): Promise<string> => {
     try {
-        const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
             contents: [{ parts: [{ text }] }],

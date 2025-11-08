@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { GoogleGenAI } from '@google/genai';
 import PromptInput from '@/components/PromptInput';
 import ResponseDisplay from '@/components/ResponseDisplay';
 import { generateContent, generateSpeech } from '@/services/geminiService';
@@ -22,10 +23,16 @@ const ChatTab: React.FC<ChatTabProps> = ({ onSetNotification, apiKey }) => {
     const handleSubmit = useCallback(async () => {
         if (!prompt.trim()) return;
 
+        if (!apiKey) {
+            onSetNotification({ type: 'error', message: 'Vui lòng cung cấp API Key trong phần cài đặt.' });
+            return;
+        }
+
         setIsLoadingText(true);
         setResponse('');
         try {
-            const result = await generateContent(prompt, isThinkingMode, apiKey);
+            const ai = new GoogleGenAI({ apiKey });
+            const result = await generateContent(ai, prompt, isThinkingMode);
             setResponse(result);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Đã xảy ra lỗi không xác định.';
@@ -38,10 +45,16 @@ const ChatTab: React.FC<ChatTabProps> = ({ onSetNotification, apiKey }) => {
 
     const handleSpeak = useCallback(async () => {
         if (!response.trim()) return;
+        
+        if (!apiKey) {
+            onSetNotification({ type: 'error', message: 'Vui lòng cung cấp API Key trong phần cài đặt.' });
+            return;
+        }
 
         setIsLoadingAudio(true);
         try {
-            const audioContent = await generateSpeech(response, 'Kore', apiKey);
+            const ai = new GoogleGenAI({ apiKey });
+            const audioContent = await generateSpeech(ai, response, 'Kore');
             await playAudio(audioContent);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Đã xảy ra lỗi không xác định.';
