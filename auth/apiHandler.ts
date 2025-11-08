@@ -1,11 +1,14 @@
 import { getIronSession, SessionOptions, IronSessionData, IronSession } from 'iron-session';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { User } from '@/types';
+import { User, VercelRequest, VercelResponse } from '@/types';
 
-// This extends the IronSessionData interface to have the properties of User
-declare module 'iron-session' {
-  interface IronSessionData extends Partial<Omit<User, 'password'>> {}
-}
+// FIX: Removed module augmentation for 'iron-session' as it was causing a "module not found" error.
+// Instead, we'll explicitly type the session data.
+// declare module 'iron-session' {
+//   interface IronSessionData extends Partial<Omit<User, 'password'>> {}
+// }
+
+// FIX: Define an explicit type for our session data.
+type AppSessionData = IronSessionData & Partial<Omit<User, 'password'>>;
 
 export const sessionOptions: SessionOptions = {
   password: process.env.SECRET_COOKIE_PASSWORD as string,
@@ -20,7 +23,8 @@ type ApiHandler = (
   res: VercelResponse,
   // The session object is an IronSession instance, not just the data.
   // This type provides the .save() and .destroy() methods.
-  session: IronSession<IronSessionData>
+  // FIX: Use the explicitly defined session type.
+  session: IronSession<AppSessionData>
 ) => Promise<void>;
 
 interface Handlers {
@@ -46,7 +50,8 @@ export function apiHandler(handlers: Handlers) {
       // --- Centralized Session Management ---
       // The generic type is not needed here because we are using module augmentation for IronSessionData.
       // getIronSession will return an object of type IronSession<IronSessionData>.
-      const session = await getIronSession(req, res, sessionOptions);
+      // FIX: Pass the explicit session data type to getIronSession.
+      const session = await getIronSession<AppSessionData>(req, res, sessionOptions);
 
       // --- Method Routing ---
       const handler = req.method ? handlers[req.method] : undefined;

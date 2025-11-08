@@ -1,3 +1,17 @@
+
+// FIX: Define base interfaces for VercelRequest and VercelResponse to avoid
+// dependency on unresolved 'http' module from Node.js types.
+interface BaseVercelRequest {
+  method?: string;
+  url?: string;
+  headers: { [key: string]: string | string[] | undefined };
+  socket: { remoteAddress?: string };
+}
+
+interface BaseVercelResponse {
+  setHeader(name: string, value: string | number | readonly string[]): this;
+}
+
 export enum SubscriptionTier {
   BASIC = 'Basic',
   PRO = 'Pro',
@@ -56,4 +70,16 @@ export interface BugReport {
   username: string;
   message: string;
   createdAt: string; // ISO 8601 date string
+}
+
+export interface VercelRequest extends BaseVercelRequest {
+  body: any;
+  query: { [key: string]: string | string[] | undefined };
+  cookies: { [key: string]: string | undefined };
+}
+
+export interface VercelResponse extends BaseVercelResponse {
+  status(code: number): this;
+  json(data: any): this;
+  send(body: any): this;
 }

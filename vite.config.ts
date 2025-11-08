@@ -1,4 +1,4 @@
-/// <reference types="node" />
+
 
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -6,12 +6,15 @@ import path from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  // FIX: Replaced process.cwd() with '.' to avoid dependency on Node types
+  // that are not being resolved in the environment.
+  const env = loadEnv(mode, '.', '');
   return {
     plugins: [react()],
     resolve: {
       alias: {
-        '@': path.resolve(process.cwd(), '.'),
+        // FIX: Replaced process.cwd() with '.'
+        '@': path.resolve('.'),
       },
     },
     server: {
