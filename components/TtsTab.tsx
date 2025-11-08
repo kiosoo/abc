@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { GoogleGenAI } from '@google/genai';
 import { Notification, User, SubscriptionTier } from '@/types';
 import { TTS_VOICES, DEFAULT_VOICE, LONG_TEXT_CHUNK_SIZE, TIER_LIMITS } from '@/constants';
 import { generateSpeech } from '@/services/geminiService';
@@ -58,14 +57,36 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
         setLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
     };
 
-    const chunkText = (str: string, size: number) => {
-        const numChunks = Math.ceil(str.length / size);
-        const chunks = new Array(numChunks);
-        for (let i = 0, o = 0; i < numChunks; ++i, o += size) {
-            chunks[i] = str.substr(o, size);
+    const smartSplit = (inputText: string, chunkSize: number): string[] => {
+        const chunks: string[] = [];
+        let remainingText = inputText;
+    
+        while (remainingText.length > 0) {
+            if (remainingText.length <= chunkSize) {
+                chunks.push(remainingText);
+                break;
+            }
+    
+            let cutIndex = chunkSize;
+            // Prioritize splitting at natural boundaries to avoid cutting words/sentences
+            const paragraphBreak = remainingText.lastIndexOf('\n\n', cutIndex);
+            const sentenceBreak = remainingText.lastIndexOf('. ', cutIndex);
+            const wordBreak = remainingText.lastIndexOf(' ', cutIndex);
+    
+            if (paragraphBreak > chunkSize / 2) {
+                cutIndex = paragraphBreak + 2;
+            } else if (sentenceBreak > chunkSize / 2) {
+                cutIndex = sentenceBreak + 1;
+            } else if (wordBreak > -1) {
+                cutIndex = wordBreak + 1;
+            }
+    
+            chunks.push(remainingText.substring(0, cutIndex));
+            remainingText = remainingText.substring(cutIndex);
         }
         return chunks;
     };
+
 
     const handleSynthesize = useCallback(async () => {
         if (!apiKey) {
@@ -88,51 +109,54 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
         addLog('Bắt đầu quá trình tổng hợp...');
 
         try {
-            const ai = new GoogleGenAI({ apiKey });
             const textToSynthesize = text.trim();
-            const textChunks = chunkText(textToSynthesize, LONG_TEXT_CHUNK_SIZE);
+            const textChunks = smartSplit(textToSynthesize, LONG_TEXT_CHUNK_SIZE);
             const totalChunks = textChunks.length;
             addLog(`Văn bản được chia thành ${totalChunks} phần.`);
             
-            if (totalChunks > 1) {
-                setEstimatedTime(Math.ceil((totalChunks - 1) * 6.5)); // Increased buffer
-            }
-            
             const audioBlobs: Blob[] = [];
+            const RATE_LIMIT_DELAY_MS = 4100; // 4.1 seconds, safely under 15 RPM
 
-            for (const [index, chunk] of textChunks.entries()) {
-                const currentChunkIndex = index + 1;
-                const logMessage = `Đang tổng hợp phần ${currentChunkIndex}/${totalChunks}...`;
-                setStatusMessage(logMessage);
-                addLog(logMessage);
+            for (let i = 0; i < totalChunks; i++) {
+                const chunk = textChunks[i];
+                const chunkNum = i + 1;
                 
-                const audioContent = await generateSpeech(ai, chunk, selectedVoice === 'auto' ? 'Kore' : selectedVoice);
+                const remainingTime = Math.round(((totalChunks - chunkNum) * RATE_LIMIT_DELAY_MS) / 1000);
+                setEstimatedTime(remainingTime);
+                setStatusMessage(`Đang xử lý phần ${chunkNum}/${totalChunks}...`);
+                addLog(`Đang xử lý phần ${chunkNum}/${totalChunks}.`);
+                
+                const audioContent = await generateSpeech(apiKey, chunk, selectedVoice === 'auto' ? 'Kore' : selectedVoice);
+                
+                addLog(`Đã nhận được âm thanh cho phần ${chunkNum}.`);
                 const decoded = decode(audioContent);
                 audioBlobs.push(createWavBlob(decoded));
-                
-                const newProgress = (currentChunkIndex / totalChunks) * 100;
-                setProgress(newProgress);
-                
-                if (index < totalChunks - 1) {
-                    const remainingChunks = totalChunks - 1 - index;
-                    setEstimatedTime(Math.ceil(remainingChunks * 6.5)); // Increased buffer
-                    addLog(`Đã xử lý phần ${currentChunkIndex}. Tạm dừng 6 giây để tuân thủ giới hạn API...`);
-                    setStatusMessage(`Đang tạm dừng để tuân thủ giới hạn API...`);
-                    await new Promise(resolve => setTimeout(resolve, 6000)); // Increased delay
+                setProgress((chunkNum / totalChunks) * 100);
+
+                if (chunkNum < totalChunks) {
+                    addLog(`Đang chờ ${RATE_LIMIT_DELAY_MS / 1000} giây để tránh giới hạn...`);
+                    setStatusMessage(`Đã xử lý xong phần ${chunkNum}/${totalChunks}. Đang chờ để tiếp tục...`);
+                    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY_MS));
                 }
             }
+
+            let finalBlob: Blob;
+            if (audioBlobs.length > 1) {
+                setStatusMessage('Đang ghép các tệp âm thanh...');
+                addLog('Đang ghép các tệp âm thanh...');
+                finalBlob = await stitchWavBlobs(audioBlobs);
+            } else {
+                finalBlob = audioBlobs[0];
+            }
             
-            setStatusMessage('Ghép các tệp âm thanh...');
-            addLog('Ghép các tệp âm thanh...');
-            const finalBlob = await stitchWavBlobs(audioBlobs);
             setAudioBlob(finalBlob);
-            const newAudioUrl = URL.createObjectURL(finalBlob);
-            setAudioUrl(newAudioUrl);
+            setAudioUrl(URL.createObjectURL(finalBlob));
             
             setStatusMessage('Tổng hợp thành công!');
             addLog('Tổng hợp thành công!');
             onSetNotification({ type: 'success', message: 'Tổng hợp giọng nói thành công.' });
             reportTtsUsage(textToSynthesize.length);
+
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Đã xảy ra lỗi không xác định.';
             setStatusMessage(`Lỗi: ${message}`);
@@ -227,7 +251,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
                             <p className="text-sm text-gray-300 animate-pulse">{statusMessage}</p>
                             {progress < 100 && estimatedTime > 0 && (
                                 <p className="text-xs text-gray-400 mt-1">
-                                    Thời gian dự kiến còn lại: ~{estimatedTime} giây
+                                    Thời gian chờ còn lại: ~{estimatedTime} giây
                                 </p>
                             )}
                         </div>

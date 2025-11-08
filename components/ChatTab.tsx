@@ -1,5 +1,4 @@
 import React, { useState, useCallback } from 'react';
-import { GoogleGenAI } from '@google/genai';
 import PromptInput from '@/components/PromptInput';
 import ResponseDisplay from '@/components/ResponseDisplay';
 import { generateContent, generateSpeech } from '@/services/geminiService';
@@ -31,8 +30,7 @@ const ChatTab: React.FC<ChatTabProps> = ({ onSetNotification, apiKey }) => {
         setIsLoadingText(true);
         setResponse('');
         try {
-            const ai = new GoogleGenAI({ apiKey });
-            const result = await generateContent(ai, prompt, isThinkingMode);
+            const result = await generateContent(apiKey, prompt, isThinkingMode);
             setResponse(result);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Đã xảy ra lỗi không xác định.';
@@ -53,8 +51,7 @@ const ChatTab: React.FC<ChatTabProps> = ({ onSetNotification, apiKey }) => {
 
         setIsLoadingAudio(true);
         try {
-            const ai = new GoogleGenAI({ apiKey });
-            const audioContent = await generateSpeech(ai, response, 'Kore');
+            const audioContent = await generateSpeech(apiKey, response, 'Kore');
             await playAudio(audioContent);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Đã xảy ra lỗi không xác định.';

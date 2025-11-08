@@ -1,8 +1,31 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
-// This function now accepts an initialized GoogleGenAI instance.
-export const generateContent = async (ai: GoogleGenAI, prompt: string, isThinkingMode: boolean): Promise<string> => {
+// --- Centralized AI Client Management ---
+let aiInstance: GoogleGenAI | null = null;
+let currentApiKey: string | null = null;
+
+/**
+ * Gets a cached instance of the GoogleGenAI client.
+ * Creates a new instance only if the API key changes.
+ * @param apiKey The user's API key.
+ * @returns An initialized GoogleGenAI instance.
+ */
+const getAiClient = (apiKey: string): GoogleGenAI => {
+    if (!aiInstance || apiKey !== currentApiKey) {
+        if (!apiKey) {
+            throw new Error('API Key is required to initialize the AI Client.');
+        }
+        aiInstance = new GoogleGenAI({ apiKey });
+        currentApiKey = apiKey;
+    }
+    return aiInstance;
+};
+// --- End of AI Client Management ---
+
+
+export const generateContent = async (apiKey: string, prompt: string, isThinkingMode: boolean): Promise<string> => {
   try {
+    const ai = getAiClient(apiKey);
     const modelName = isThinkingMode ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
 
     const response = await ai.models.generateContent({
@@ -24,9 +47,9 @@ export const generateContent = async (ai: GoogleGenAI, prompt: string, isThinkin
   }
 };
 
-// This function now accepts an initialized GoogleGenAI instance.
-export const generateSpeech = async (ai: GoogleGenAI, text: string, voice: string = 'Kore'): Promise<string> => {
+export const generateSpeech = async (apiKey: string, text: string, voice: string = 'Kore'): Promise<string> => {
     try {
+        const ai = getAiClient(apiKey);
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
             contents: [{ parts: [{ text }] }],
