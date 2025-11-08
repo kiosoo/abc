@@ -57,6 +57,7 @@ export interface VoiceOption {
   name: string;
 }
 
+// FIX: Add missing TimedWord interface to resolve import error.
 export interface TimedWord {
     word: string;
     startTime: string;

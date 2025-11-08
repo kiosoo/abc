@@ -91,12 +91,25 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                     ))}
                 </ul>
 
-                <button
-                    disabled={isCurrentUserTier}
-                    className={`w-full mt-8 py-3 px-4 rounded-lg font-semibold text-white transition-colors ${isCurrentUserTier ? details.style.button : (tier === SubscriptionTier.PRO ? tierDetails.Pro.style.button : tierDetails.Ultra.style.button)}`}
-                >
-                    {isCurrentUserTier ? 'Gói Hiện Tại' : 'Liên hệ Nâng cấp'}
-                </button>
+                {isCurrentUserTier ? (
+                    <button
+                        disabled
+                        className={`w-full mt-8 py-3 px-4 rounded-lg font-semibold text-white transition-colors ${details.style.button}`}
+                    >
+                        Gói Hiện Tại
+                    </button>
+                ) : tier === SubscriptionTier.BASIC ? (
+                    <div className="mt-8 h-12" aria-hidden="true" />
+                ) : (
+                    <a
+                        href="https://zalo.me/0985351304"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`block text-center w-full mt-8 py-3 px-4 rounded-lg font-semibold text-white transition-colors ${details.style.button}`}
+                    >
+                        Liên hệ Nâng cấp
+                    </a>
+                )}
             </div>
         );
     };

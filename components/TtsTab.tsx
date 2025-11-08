@@ -1,10 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Notification, User, TimedWord } from '@/types';
+import { Notification, User } from '@/types';
 import { TTS_VOICES, DEFAULT_VOICE, LONG_TEXT_CHUNK_SIZE, TIER_LIMITS, TTS_REQUEST_INTERVAL_MS } from '@/constants';
 import { generateSpeech } from '@/services/geminiService';
-import { stitchWavBlobs, decode, createWavBlob, calculatePcmDuration } from '@/utils/audioUtils';
-import { createSrtContent } from '@/utils/srtUtils';
-import { ChevronDownIcon, LoadingSpinner, PlayIcon, PauseIcon, DownloadIcon, ErrorIcon, DocumentTextIcon, SrtIcon } from '@/components/Icons';
+import { stitchWavBlobs, decode, createWavBlob } from '@/utils/audioUtils';
+import { ChevronDownIcon, LoadingSpinner, DownloadIcon, ErrorIcon, DocumentTextIcon } from '@/components/Icons';
 import { reportTtsUsage } from '@/services/apiService';
 import SubscriptionModal from '@/components/SubscriptionModal';
 
@@ -17,7 +16,6 @@ interface TtsTabProps {
 const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
     const [text, setText] = useState('');
     const [selectedVoice, setSelectedVoice] = useState(DEFAULT_VOICE);
-    const [generateSrt, setGenerateSrt] = useState(false);
     const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
     
     // Local state for TTS generation
@@ -25,36 +23,21 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
     const [progress, setProgress] = useState(0);
     const [statusMessage, setStatusMessage] = useState('');
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-    const [srtContent, setSrtContent] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     
     // Refs
     const audioRef = useRef<HTMLAudioElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     
-    // Audio player state
-    const [isPlaying, setIsPlaying] = useState(false);
-
     const characterLimit = TIER_LIMITS[user.tier];
     const isOverLimit = characterLimit === Infinity ? false : text.length > characterLimit;
 
     useEffect(() => {
-        const audioEl = audioRef.current;
-        if (!audioEl) return;
-
-        const onPlay = () => setIsPlaying(true);
-        const onPause = () => setIsPlaying(false);
-        const onEnded = () => setIsPlaying(false);
-
-        audioEl.addEventListener('play', onPlay);
-        audioEl.addEventListener('pause', onPause);
-        audioEl.addEventListener('ended', onEnded);
-
-        return () => {
-            audioEl.removeEventListener('play', onPlay);
-            audioEl.removeEventListener('pause', onPause);
-            audioEl.removeEventListener('ended', onEnded);
-        };
+        // When a new audio blob is generated, create a new URL for the audio player.
+        // This ensures the audio element updates correctly.
+        if (audioBlob && audioRef.current) {
+            audioRef.current.src = URL.createObjectURL(audioBlob);
+        }
     }, [audioBlob]);
     
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,7 +73,6 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
         setStatusMessage('Bắt đầu quá trình tổng hợp...');
         setAudioBlob(null);
         setError(null);
-        setSrtContent(null);
         
         try {
             const chunks: string[] = [];
@@ -99,30 +81,14 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
             }
 
             const audioBlobs: Blob[] = [];
-            const allTimedWords: TimedWord[] = [];
-            let totalDuration = 0;
 
             for (let i = 0; i < chunks.length; i++) {
                 const chunk = chunks[i];
                 setStatusMessage(`Đang xử lý phần ${i + 1}/${chunks.length}...`);
                 
-                const { base64Audio, timedWords } = await generateSpeech(apiKey, chunk, selectedVoice === 'auto' ? undefined : selectedVoice, generateSrt);
+                const { base64Audio } = await generateSpeech(apiKey, chunk, selectedVoice === 'auto' ? undefined : selectedVoice);
                 const pcmData = decode(base64Audio);
                 audioBlobs.push(createWavBlob(pcmData));
-
-                if (generateSrt && timedWords) {
-                    const chunkDuration = calculatePcmDuration(pcmData);
-                    const parseTime = (s: string) => parseFloat(s.replace('s', ''));
-                    
-                    timedWords.forEach(word => {
-                        allTimedWords.push({
-                            ...word,
-                            startTime: `${parseTime(word.startTime) + totalDuration}s`,
-                            endTime: `${parseTime(word.endTime) + totalDuration}s`,
-                        });
-                    });
-                    totalDuration += chunkDuration;
-                }
                 
                 setProgress(((i + 1) / chunks.length) * 100);
                 
@@ -135,12 +101,6 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
             const finalBlob = await stitchWavBlobs(audioBlobs);
             setAudioBlob(finalBlob);
             
-            if (generateSrt && allTimedWords.length > 0) {
-                setStatusMessage('Đang tạo file phụ đề...');
-                const srt = createSrtContent(allTimedWords);
-                setSrtContent(srt);
-            }
-            
             await reportTtsUsage(text.length);
             onSetNotification({ type: 'success', message: 'Tổng hợp giọng nói thành công!' });
         } catch (e) {
@@ -151,18 +111,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
             setIsLoading(false);
             setStatusMessage('');
         }
-    }, [text, apiKey, selectedVoice, isOverLimit, characterLimit, user.tier, onSetNotification, generateSrt]);
-
-    const handlePlayPause = () => {
-        const audio = audioRef.current;
-        if (audio) {
-            if (isPlaying) {
-                audio.pause();
-            } else {
-                audio.play();
-            }
-        }
-    };
+    }, [text, apiKey, selectedVoice, isOverLimit, characterLimit, user.tier, onSetNotification]);
     
     const handleDownload = (blob: Blob, filename: string) => {
         const url = URL.createObjectURL(blob);
@@ -224,16 +173,6 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
                                 <button onClick={() => setIsSubscriptionModalOpen(true)} className="ml-1 text-cyan-500 hover:underline text-xs">(Xem chi tiết)</button>
                             </p>
                         </div>
-                        <label className="flex items-center justify-end gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
-                            <input
-                                type="checkbox"
-                                checked={generateSrt}
-                                onChange={(e) => setGenerateSrt(e.target.checked)}
-                                disabled={isLoading}
-                                className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
-                            />
-                            Tạo file phụ đề (.srt)
-                        </label>
                     </div>
                 </div>
                  <button
@@ -267,24 +206,11 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
                         </div>
                     )}
                     {audioBlob && !isLoading && (
-                        <div className="flex flex-wrap items-center gap-4 p-3 bg-gray-900 rounded-lg">
-                             <button onClick={handlePlayPause} className="p-2 text-white bg-cyan-600 hover:bg-cyan-700 rounded-full transition-colors">
-                                {isPlaying ? <PauseIcon /> : <PlayIcon />}
-                            </button>
-                            <audio ref={audioRef} src={URL.createObjectURL(audioBlob)} className="hidden"></audio>
-                            <div className="flex-grow text-sm text-gray-300">
-                                Âm thanh đã sẵn sàng.
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {srtContent && (
-                                    <button 
-                                        onClick={() => handleDownload(new Blob([srtContent], { type: 'text/plain' }), `subtitles_${Date.now()}.srt`)} 
-                                        className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
-                                    >
-                                        <SrtIcon />
-                                        Tải xuống (.srt)
-                                    </button>
-                                )}
+                        <div className="space-y-4 p-3 bg-gray-900 rounded-lg">
+                            <audio ref={audioRef} controls className="w-full h-12">
+                                Trình duyệt của bạn không hỗ trợ phát âm thanh.
+                            </audio>
+                            <div className="flex items-center justify-end gap-2">
                                 <button 
                                     onClick={() => handleDownload(audioBlob, `tts_output_${Date.now()}.wav`)} 
                                     className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"

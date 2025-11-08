@@ -1,5 +1,4 @@
 import { GoogleGenAI, Modality, GenerateContentResponse } from "@google/genai";
-import { TimedWord } from '@/types';
 
 // --- Centralized AI Client Management ---
 let aiInstance: GoogleGenAI | null = null;
@@ -22,26 +21,6 @@ const getAiClient = (apiKey: string): GoogleGenAI => {
     return aiInstance;
 };
 // --- End of AI Client Management ---
-
-/**
- * Finds timed words from the API response. The SDK may attach this data
- * in a non-standard way, so this function defensively checks for it.
- * @param response The response from the generateContent call.
- * @returns An array of TimedWord objects or null if not found.
- */
-const findTimedWords = (response: GenerateContentResponse): TimedWord[] | null => {
-    const candidate = response.candidates?.[0];
-    if (!candidate?.content?.parts) return null;
-    
-    for (const part of candidate.content.parts) {
-        // The SDK might attach it directly to the part object
-        if ((part as any).timedWords) {
-            return (part as any).timedWords;
-        }
-    }
-    return null;
-}
-
 
 export const generateContent = async (apiKey: string, prompt: string, isThinkingMode: boolean): Promise<string> => {
     try {
@@ -74,13 +53,12 @@ export const generateContent = async (apiKey: string, prompt: string, isThinking
 export const generateSpeech = async (
     apiKey: string, 
     text: string, 
-    voice: string = 'Kore',
-    requestTimestamps: boolean = false
-): Promise<{ base64Audio: string; timedWords: TimedWord[] | null }> => {
+    voice: string = 'Kore'
+): Promise<{ base64Audio: string }> => {
     try {
         const ai = getAiClient(apiKey);
         
-        const speechConfig = {
+        const speechConfig: { [key: string]: any } = {
             voiceConfig: {
                 prebuiltVoiceConfig: { voiceName: voice },
             },
@@ -102,9 +80,7 @@ export const generateSpeech = async (
             throw new Error('Không thể tạo âm thanh từ API.');
         }
 
-        const timedWords = requestTimestamps ? findTimedWords(response) : null;
-
-        return { base64Audio, timedWords };
+        return { base64Audio };
     } catch (error) {
         console.error('TTS API error:', error);
         const errorString = error.toString();
