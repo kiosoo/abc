@@ -1,5 +1,5 @@
-import { apiHandler } from '../../auth/apiHandler';
-import { findUserByUsername, updateUser, findUserById, ensureAdminExists } from '../../auth/userManagement';
+import { apiHandler } from '../_lib/apiHandler';
+import { findUserByUsername, updateUser, findUserById, ensureAdminExists } from '../_lib/userManagement';
 
 export default apiHandler({
     POST: async (req, res, session) => {

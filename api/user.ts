@@ -1,5 +1,5 @@
-import { apiHandler } from '../auth/apiHandler';
-import { findUserById } from '../auth/userManagement';
+import { apiHandler } from './_lib/apiHandler';
+import { findUserById } from './_lib/userManagement';
 
 export default apiHandler({
     GET: async (req, res, session) => {
