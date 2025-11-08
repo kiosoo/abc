@@ -1,5 +1,5 @@
 import { apiHandler } from './_lib/apiHandler';
-import { User } from '../types';
+import { User } from './_lib/types';
 import { getAllUsers, updateUser } from './_lib/userManagement';
 
 export default apiHandler({

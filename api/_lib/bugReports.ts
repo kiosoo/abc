@@ -1,5 +1,5 @@
 import { createClient, VercelKV } from '@vercel/kv';
-import { BugReport } from '../../types';
+import { BugReport } from './types';
 
 let kv: VercelKV | null = null;
 
