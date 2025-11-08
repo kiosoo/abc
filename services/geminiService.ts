@@ -80,7 +80,7 @@ export const generateSpeech = async (
     try {
         const ai = getAiClient(apiKey);
         
-        // Use 'any' for speechConfig to accommodate the potentially undocumented 'enableTimepoints' property.
+        // Use 'any' for speechConfig to accommodate the 'enableWordTimeOffsets' property.
         const speechConfig: any = {
             voiceConfig: {
                 prebuiltVoiceConfig: { voiceName: voice },
@@ -88,7 +88,8 @@ export const generateSpeech = async (
         };
 
         if (requestTimestamps) {
-            speechConfig.enableTimepoints = true;
+            // Correct parameter name for requesting word-level timestamps.
+            speechConfig.enableWordTimeOffsets = true;
         }
 
         const response = await ai.models.generateContent({
