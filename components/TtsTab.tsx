@@ -93,7 +93,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
             addLog(`Văn bản được chia thành ${totalChunks} phần.`);
             
             if (totalChunks > 1) {
-                setEstimatedTime(Math.ceil((totalChunks - 1) * 5.5)); // Initial estimation, add buffer for API time
+                setEstimatedTime(Math.ceil((totalChunks - 1) * 6.5)); // Increased buffer
             }
             
             const audioBlobs: Blob[] = [];
@@ -113,10 +113,10 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
                 
                 if (index < totalChunks - 1) {
                     const remainingChunks = totalChunks - 1 - index;
-                    setEstimatedTime(Math.ceil(remainingChunks * 5.5)); // Update estimation, add buffer for API time
-                    addLog(`Đã xử lý phần ${currentChunkIndex}. Tạm dừng 5 giây để tuân thủ giới hạn API...`);
+                    setEstimatedTime(Math.ceil(remainingChunks * 6.5)); // Increased buffer
+                    addLog(`Đã xử lý phần ${currentChunkIndex}. Tạm dừng 6 giây để tuân thủ giới hạn API...`);
                     setStatusMessage(`Đang tạm dừng để tuân thủ giới hạn API...`);
-                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    await new Promise(resolve => setTimeout(resolve, 6000)); // Increased delay
                 }
             }
             
