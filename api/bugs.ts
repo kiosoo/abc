@@ -1,5 +1,5 @@
-import { apiHandler } from '@/auth/apiHandler';
-import { createBugReport, getAllBugReports } from '@/auth/bugReports';
+import { apiHandler } from '../auth/apiHandler';
+import { createBugReport, getAllBugReports } from '../auth/bugReports';
 
 export default apiHandler({
     POST: async (req, res, session) => {

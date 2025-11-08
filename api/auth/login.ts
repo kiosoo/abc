@@ -1,6 +1,5 @@
-import { apiHandler } from '@/auth/apiHandler';
-import { User } from '@/types';
-import { findUserByUsername, updateUser, findUserById, ensureAdminExists } from '@/auth/userManagement';
+import { apiHandler } from '../../auth/apiHandler';
+import { findUserByUsername, updateUser, findUserById, ensureAdminExists } from '../../auth/userManagement';
 
 export default apiHandler({
     POST: async (req, res, session) => {

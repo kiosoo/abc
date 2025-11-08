@@ -1,6 +1,6 @@
-import { apiHandler } from '@/auth/apiHandler';
-import { User } from '@/types';
-import { getAllUsers, updateUser } from '@/auth/userManagement';
+import { apiHandler } from '../auth/apiHandler';
+import { User } from '../types';
+import { getAllUsers, updateUser } from '../auth/userManagement';
 
 export default apiHandler({
     GET: async (req, res, session) => {

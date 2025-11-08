@@ -1,5 +1,5 @@
-import { getIronSession, SessionOptions, IronSessionData, IronSession } from 'iron-session';
-import { User, VercelRequest, VercelResponse } from '@/types';
+import { getIronSession, SessionOptions, IronSession } from 'iron-session';
+import { User, VercelRequest, VercelResponse } from '../types';
 
 // FIX: Removed module augmentation for 'iron-session' as it was causing a "module not found" error.
 // Instead, we'll explicitly type the session data.
@@ -8,7 +8,9 @@ import { User, VercelRequest, VercelResponse } from '@/types';
 // }
 
 // FIX: Define an explicit type for our session data.
-type AppSessionData = IronSessionData & Partial<Omit<User, 'password'>>;
+// FIX: 'IronSessionData' is not an exported member of 'iron-session'.
+// The session data type is defined with just the application-specific fields.
+type AppSessionData = Partial<Omit<User, 'password'>>;
 
 type ApiHandler = (
   req: VercelRequest,
@@ -52,7 +54,9 @@ export function apiHandler(handlers: Handlers) {
 
       // --- Centralized Session Management ---
       // FIX: Pass the explicit session data type to getIronSession.
-      const session = await getIronSession<AppSessionData>(req, res, sessionOptions);
+      // FIX: Cast `req` and `res` to `any` to satisfy `getIronSession`'s type requirements,
+      // as VercelRequest/VercelResponse are custom types not assignable to Node's IncomingMessage/ServerResponse.
+      const session = await getIronSession<AppSessionData>(req as any, res as any, sessionOptions);
 
       // --- Method Routing ---
       const handler = req.method ? handlers[req.method] : undefined;

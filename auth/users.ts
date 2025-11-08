@@ -1,4 +1,4 @@
-import { User, SubscriptionTier } from '@/types';
+import { User, SubscriptionTier } from '../types';
 
 // WARNING: This user object is now only for seeding the database if the admin doesn't exist.
 // User data is stored in Vercel KV.

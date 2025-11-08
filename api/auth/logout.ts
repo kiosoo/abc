@@ -1,4 +1,4 @@
-import { apiHandler } from '@/auth/apiHandler';
+import { apiHandler } from '../../auth/apiHandler';
 
 export default apiHandler({
     POST: async (req, res, session) => {
