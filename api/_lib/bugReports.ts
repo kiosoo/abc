@@ -63,6 +63,20 @@ export async function createBugReport(userId: string, username: string, message:
 export async function getAllBugReports(): Promise<BugReport[]> {
     const kv = getKv();
     // Fetch all items from the list. For very large lists, consider pagination.
-    const reportsJson = await kv.lrange(BUG_REPORTS_KEY, 0, -1);
-    return reportsJson.map(report => JSON.parse(report as string));
+    const rawReports = await kv.lrange(BUG_REPORTS_KEY, 0, -1);
+    
+    // The @vercel/kv client may automatically parse JSON strings from lists,
+    // returning objects. This code handles both strings and pre-parsed objects
+    // to prevent JSON parsing errors.
+    return rawReports.map(report => {
+        if (typeof report === 'string') {
+            try {
+                return JSON.parse(report);
+            } catch (e) {
+                console.error('Could not parse bug report from KV, it might be corrupted:', report);
+                return null;
+            }
+        }
+        return report as BugReport;
+    }).filter((r): r is BugReport => r !== null);
 }
