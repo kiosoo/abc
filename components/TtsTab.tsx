@@ -1,10 +1,9 @@
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Notification, User, SubscriptionTier } from '@/types';
 import { TTS_VOICES, DEFAULT_VOICE, LONG_TEXT_CHUNK_SIZE, TIER_LIMITS } from '@/constants';
 import { generateSpeech } from '@/services/geminiService';
 import { stitchWavBlobs, decode, createWavBlob } from '@/utils/audioUtils';
-import { DownloadIcon, ChevronDownIcon } from '@/components/Icons';
+import { DownloadIcon, ChevronDownIcon, LoadingSpinner } from '@/components/Icons';
 import { reportTtsUsage } from '@/services/apiService';
 
 interface TtsTabProps {
@@ -29,6 +28,9 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
     const [audioUrl, setAudioUrl] = useState<string | null>(null);
     const [logs, setLogs] = useState<string[]>([]);
     const [isLogsOpen, setIsLogsOpen] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const [statusMessage, setStatusMessage] = useState('');
+    const [estimatedTime, setEstimatedTime] = useState(0);
     
     const MAX_TEXT_LENGTH = TIER_LIMITS[user.tier] || TIER_LIMITS[SubscriptionTier.BASIC];
 
@@ -79,35 +81,65 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
         if (audioUrl) URL.revokeObjectURL(audioUrl);
         setAudioUrl(null);
         setLogs([]);
+        setProgress(0);
+        setEstimatedTime(0);
+        setStatusMessage('Bắt đầu quá trình tổng hợp...');
         addLog('Bắt đầu quá trình tổng hợp...');
 
         try {
             const textToSynthesize = text.trim();
             const textChunks = chunkText(textToSynthesize, LONG_TEXT_CHUNK_SIZE);
-            addLog(`Văn bản được chia thành ${textChunks.length} phần.`);
+            const totalChunks = textChunks.length;
+            addLog(`Văn bản được chia thành ${totalChunks} phần.`);
+            
+            if (totalChunks > 1) {
+                setEstimatedTime(Math.ceil((totalChunks - 1) * 5.5)); // Initial estimation, add buffer for API time
+            }
+            
             const audioBlobs: Blob[] = [];
 
             for (const [index, chunk] of textChunks.entries()) {
-                addLog(`Đang xử lý phần ${index + 1}/${textChunks.length}...`);
+                const currentChunkIndex = index + 1;
+                const logMessage = `Đang tổng hợp phần ${currentChunkIndex}/${totalChunks}...`;
+                setStatusMessage(logMessage);
+                addLog(logMessage);
+                
                 const audioContent = await generateSpeech(chunk, selectedVoice === 'auto' ? 'Kore' : selectedVoice, apiKey);
                 const decoded = decode(audioContent);
                 audioBlobs.push(createWavBlob(decoded));
+                
+                const newProgress = (currentChunkIndex / totalChunks) * 100;
+                setProgress(newProgress);
+                
+                if (index < totalChunks - 1) {
+                    const remainingChunks = totalChunks - 1 - index;
+                    setEstimatedTime(Math.ceil(remainingChunks * 5.5)); // Update estimation, add buffer for API time
+                    addLog(`Đã xử lý phần ${currentChunkIndex}. Tạm dừng 5 giây để tuân thủ giới hạn API...`);
+                    setStatusMessage(`Đang tạm dừng để tuân thủ giới hạn API...`);
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                }
             }
             
+            setStatusMessage('Ghép các tệp âm thanh...');
             addLog('Ghép các tệp âm thanh...');
             const finalBlob = await stitchWavBlobs(audioBlobs);
             setAudioBlob(finalBlob);
             const newAudioUrl = URL.createObjectURL(finalBlob);
             setAudioUrl(newAudioUrl);
+            
+            setStatusMessage('Tổng hợp thành công!');
             addLog('Tổng hợp thành công!');
             onSetNotification({ type: 'success', message: 'Tổng hợp giọng nói thành công.' });
             reportTtsUsage(textToSynthesize.length);
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Đã xảy ra lỗi không xác định.';
+            setStatusMessage(`Lỗi: ${message}`);
             addLog(`Lỗi: ${message}`);
             onSetNotification({ type: 'error', message: `Tổng hợp thất bại: ${message}` });
         } finally {
             setIsLoading(false);
+            setProgress(0);
+            setEstimatedTime(0);
         }
     }, [text, selectedVoice, onSetNotification, apiKey, audioUrl]);
     
@@ -173,13 +205,31 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
                     disabled={isLoading || !text.trim()}
                     className="px-6 py-3 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-600 flex items-center justify-center gap-2 transition-colors duration-200 text-base"
                 >
+                    {isLoading && <LoadingSpinner className="h-5 w-5" />}
                     {isLoading ? 'Đang tạo...' : 'Generate Audio'}
                 </button>
             </div>
             
             <div className="bg-gray-900/70 border border-gray-700 rounded-lg min-h-[90px] p-4 flex flex-col justify-center items-center">
                 {isLoading ? (
-                    <p className="text-gray-400">Đang tạo âm thanh, vui lòng chờ...</p>
+                    <div className="w-full space-y-2 px-2">
+                        <div className="w-full bg-gray-700 rounded-full h-4 relative overflow-hidden">
+                            <div 
+                                className="bg-gradient-to-r from-blue-500 to-purple-600 h-4 rounded-full transition-all duration-500 ease-linear flex items-center justify-center" 
+                                style={{ width: `${progress}%` }}
+                            >
+                                <span className="text-xs font-bold text-white shadow-sm">{Math.round(progress)}%</span>
+                            </div>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-sm text-gray-300 animate-pulse">{statusMessage}</p>
+                            {progress < 100 && estimatedTime > 0 && (
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Thời gian dự kiến còn lại: ~{estimatedTime} giây
+                                </p>
+                            )}
+                        </div>
+                    </div>
                 ) : audioUrl ? (
                     <div className="w-full space-y-3">
                       <audio controls src={audioUrl} ref={audioRef} className="w-full"></audio>
