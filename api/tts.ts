@@ -1,5 +1,5 @@
 import { GoogleGenAI, Modality } from '@google/genai';
-import type { VercelRequest, VercelResponse } from './_lib/types';
+import type { VercelRequest, VercelResponse } from './_lib/types.js';
 
 export default async function ttsHandler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {

@@ -1,6 +1,6 @@
 import { createClient, VercelKV } from '@vercel/kv';
-import { User, SubscriptionTier } from './types';
-import { ADMIN_USER_SEED } from './users';
+import { User, SubscriptionTier } from './types.js';
+import { ADMIN_USER_SEED } from './users.js';
 
 let kv: VercelKV | null = null;
 

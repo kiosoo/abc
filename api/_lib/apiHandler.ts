@@ -1,5 +1,5 @@
 import { getIronSession, SessionOptions, IronSession } from 'iron-session';
-import { User, VercelRequest, VercelResponse } from './types';
+import { User, VercelRequest, VercelResponse } from './types.js';
 
 // FIX: Define an explicit type for our session data.
 // FIX: 'IronSessionData' is not an exported member of 'iron-session'.

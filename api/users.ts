@@ -1,6 +1,6 @@
-import { apiHandler } from './_lib/apiHandler';
-import { User } from './_lib/types';
-import { getAllUsers, updateUser } from './_lib/userManagement';
+import { apiHandler } from './_lib/apiHandler.js';
+import { User } from './_lib/types.js';
+import { getAllUsers, updateUser } from './_lib/userManagement.js';
 
 export default apiHandler({
     GET: async (req, res, session) => {

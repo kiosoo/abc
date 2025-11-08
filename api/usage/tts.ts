@@ -1,5 +1,5 @@
-import { apiHandler } from '../_lib/apiHandler';
-import { logTtsUsage } from '../_lib/userManagement';
+import { apiHandler } from '../_lib/apiHandler.js';
+import { logTtsUsage } from '../_lib/userManagement.js';
 
 export default apiHandler({
     POST: async (req, res, session) => {

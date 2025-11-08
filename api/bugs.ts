@@ -1,5 +1,5 @@
-import { apiHandler } from './_lib/apiHandler';
-import { createBugReport, getAllBugReports } from './_lib/bugReports';
+import { apiHandler } from './_lib/apiHandler.js';
+import { createBugReport, getAllBugReports } from './_lib/bugReports.js';
 
 export default apiHandler({
     POST: async (req, res, session) => {
