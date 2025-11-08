@@ -1,4 +1,3 @@
-// FIX: Import IronSession and IronSessionData to resolve the 'Cannot find name' error and type session object correctly.
 import { getIronSession, SessionOptions, IronSessionData, IronSession } from 'iron-session';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { User } from '@/types';
@@ -19,7 +18,7 @@ export const sessionOptions: SessionOptions = {
 type ApiHandler = (
   req: VercelRequest,
   res: VercelResponse,
-  // FIX: The session object is an IronSession instance, not just the data.
+  // The session object is an IronSession instance, not just the data.
   // This type provides the .save() and .destroy() methods.
   session: IronSession<IronSessionData>
 ) => Promise<void>;
@@ -45,7 +44,7 @@ export function apiHandler(handlers: Handlers) {
       }
 
       // --- Centralized Session Management ---
-      // FIX: The generic type is not needed here because we are using module augmentation for IronSessionData.
+      // The generic type is not needed here because we are using module augmentation for IronSessionData.
       // getIronSession will return an object of type IronSession<IronSessionData>.
       const session = await getIronSession(req, res, sessionOptions);
 
