@@ -1,4 +1,3 @@
-
 // A minimalist WAV file header writer
 // Based on: http://soundfile.sapp.org/doc/WaveFormat/
 // This is sufficient for the PCM data returned by the Gemini API.
@@ -123,4 +122,17 @@ export const stitchWavBlobs = async (blobs: Blob[]): Promise<Blob> => {
     }
 
     return createWavBlob(combinedPcm);
+};
+
+/**
+ * Calculates the duration in seconds of raw PCM audio data.
+ * @param pcmData The raw PCM data from the API.
+ * @returns The duration in seconds.
+ */
+export const calculatePcmDuration = (pcmData: Uint8Array): number => {
+    const sampleRate = 24000; // Gemini TTS standard sample rate
+    const numChannels = 1;     // Mono
+    const bytesPerSample = 2;  // 16-bit
+    const totalSamples = pcmData.length / (numChannels * bytesPerSample);
+    return totalSamples / sampleRate;
 };

@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Notification, User, SubscriptionTier } from '@/types';
-import { TTS_VOICES, DEFAULT_VOICE, LONG_TEXT_CHUNK_SIZE, TIER_LIMITS } from '@/constants';
+import { Notification, User, TimedWord } from '@/types';
+import { TTS_VOICES, DEFAULT_VOICE, LONG_TEXT_CHUNK_SIZE, TIER_LIMITS, TTS_REQUEST_INTERVAL_MS } from '@/constants';
 import { generateSpeech } from '@/services/geminiService';
-import { stitchWavBlobs, decode, createWavBlob } from '@/utils/audioUtils';
-import { DownloadIcon, ChevronDownIcon, LoadingSpinner } from '@/components/Icons';
+import { stitchWavBlobs, decode, createWavBlob, calculatePcmDuration } from '@/utils/audioUtils';
+import { createSrtContent } from '@/utils/srtUtils';
+import { ChevronDownIcon, LoadingSpinner, PlayIcon, PauseIcon, DownloadIcon, ErrorIcon, DocumentTextIcon, SrtIcon } from '@/components/Icons';
 import { reportTtsUsage } from '@/services/apiService';
+import SubscriptionModal from '@/components/SubscriptionModal';
 
 interface TtsTabProps {
     onSetNotification: (notification: Omit<Notification, 'id'>) => void;
@@ -12,279 +14,293 @@ interface TtsTabProps {
     apiKey: string;
 }
 
-const tierStyles: { [key in SubscriptionTier]: string } = {
-    [SubscriptionTier.BASIC]: 'bg-gray-600 text-gray-100',
-    [SubscriptionTier.PRO]: 'bg-blue-600 text-blue-100',
-    [SubscriptionTier.ULTRA]: 'bg-purple-600 text-purple-100',
-};
-
-
 const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKey }) => {
-    const [text, setText] = useState('Hello, this is a test of the advanced text to speech system. It can handle long text by splitting it into smaller chunks. Let\'s try some multilingual text. 안녕하세요. こんにちは.');
+    const [text, setText] = useState('');
     const [selectedVoice, setSelectedVoice] = useState(DEFAULT_VOICE);
+    const [generateSrt, setGenerateSrt] = useState(false);
+    const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+    
+    // Local state for TTS generation
     const [isLoading, setIsLoading] = useState(false);
-    const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-    const audioRef = useRef<HTMLAudioElement | null>(null);
-    const [audioUrl, setAudioUrl] = useState<string | null>(null);
-    const [logs, setLogs] = useState<string[]>([]);
-    const [isLogsOpen, setIsLogsOpen] = useState(false);
     const [progress, setProgress] = useState(0);
     const [statusMessage, setStatusMessage] = useState('');
-    const [estimatedTime, setEstimatedTime] = useState(0);
+    const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+    const [srtContent, setSrtContent] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
     
-    const MAX_TEXT_LENGTH = TIER_LIMITS[user.tier] || TIER_LIMITS[SubscriptionTier.BASIC];
+    // Refs
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    
+    // Audio player state
+    const [isPlaying, setIsPlaying] = useState(false);
+
+    const characterLimit = TIER_LIMITS[user.tier];
+    const isOverLimit = characterLimit === Infinity ? false : text.length > characterLimit;
 
     useEffect(() => {
-        // Truncate text if it exceeds the new limit when the tier changes.
-        if (text.length > MAX_TEXT_LENGTH) {
-            setText(text.slice(0, MAX_TEXT_LENGTH));
-            onSetNotification({
-                type: 'info',
-                message: `Văn bản đã được rút gọn để phù hợp với giới hạn gói của bạn.`,
-            });
-        }
-    }, [user.tier, MAX_TEXT_LENGTH, onSetNotification, text]);
+        const audioEl = audioRef.current;
+        if (!audioEl) return;
 
-    useEffect(() => {
+        const onPlay = () => setIsPlaying(true);
+        const onPause = () => setIsPlaying(false);
+        const onEnded = () => setIsPlaying(false);
+
+        audioEl.addEventListener('play', onPlay);
+        audioEl.addEventListener('pause', onPause);
+        audioEl.addEventListener('ended', onEnded);
+
         return () => {
-            if (audioUrl) {
-                URL.revokeObjectURL(audioUrl);
-            }
+            audioEl.removeEventListener('play', onPlay);
+            audioEl.removeEventListener('pause', onPause);
+            audioEl.removeEventListener('ended', onEnded);
         };
-    }, [audioUrl]);
+    }, [audioBlob]);
+    
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
 
-    const addLog = (message: string) => {
-        setLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-    };
-
-    const smartSplit = (inputText: string, chunkSize: number): string[] => {
-        const chunks: string[] = [];
-        let remainingText = inputText;
-    
-        while (remainingText.length > 0) {
-            if (remainingText.length <= chunkSize) {
-                chunks.push(remainingText);
-                break;
-            }
-    
-            let cutIndex = chunkSize;
-            // Prioritize splitting at natural boundaries to avoid cutting words/sentences
-            const paragraphBreak = remainingText.lastIndexOf('\n\n', cutIndex);
-            const sentenceBreak = remainingText.lastIndexOf('. ', cutIndex);
-            const wordBreak = remainingText.lastIndexOf(' ', cutIndex);
-    
-            if (paragraphBreak > chunkSize / 2) {
-                cutIndex = paragraphBreak + 2;
-            } else if (sentenceBreak > chunkSize / 2) {
-                cutIndex = sentenceBreak + 1;
-            } else if (wordBreak > -1) {
-                cutIndex = wordBreak + 1;
-            }
-    
-            chunks.push(remainingText.substring(0, cutIndex));
-            remainingText = remainingText.substring(cutIndex);
+        if (file.type === 'text/plain') {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const fileText = e.target?.result as string;
+                setText(fileText);
+                onSetNotification({ type: 'success', message: `Đã tải nội dung từ ${file.name}`});
+            };
+            reader.readAsText(file);
+        } else {
+            onSetNotification({ type: 'error', message: 'Loại file không được hỗ trợ. Vui lòng tải lên file .txt.' });
         }
-        return chunks;
+        if(event.target) event.target.value = ''; // Reset input to allow re-uploading the same file
     };
 
-
-    const handleSynthesize = useCallback(async () => {
+    const handleGenerateSpeech = useCallback(async () => {
         if (!apiKey) {
-            onSetNotification({ type: 'error', message: 'Vui lòng nhập API Key của bạn ở góc trên bên phải.' });
+            onSetNotification({ type: 'error', message: 'Vui lòng cung cấp API Key.' });
             return;
         }
-        if (!text.trim()) {
-            onSetNotification({ type: 'error', message: 'Vui lòng nhập văn bản để tổng hợp.' });
+        if (isOverLimit) {
+            onSetNotification({ type: 'error', message: `Bạn đã vượt quá giới hạn ${characterLimit.toLocaleString()} ký tự của gói ${user.tier}.` });
             return;
         }
-        
+
         setIsLoading(true);
-        setAudioBlob(null);
-        if (audioUrl) URL.revokeObjectURL(audioUrl);
-        setAudioUrl(null);
-        setLogs([]);
         setProgress(0);
-        setEstimatedTime(0);
         setStatusMessage('Bắt đầu quá trình tổng hợp...');
-        addLog('Bắt đầu quá trình tổng hợp...');
-
+        setAudioBlob(null);
+        setError(null);
+        setSrtContent(null);
+        
         try {
-            const textToSynthesize = text.trim();
-            const textChunks = smartSplit(textToSynthesize, LONG_TEXT_CHUNK_SIZE);
-            const totalChunks = textChunks.length;
-            addLog(`Văn bản được chia thành ${totalChunks} phần.`);
-            
+            const chunks: string[] = [];
+            for (let i = 0; i < text.length; i += LONG_TEXT_CHUNK_SIZE) {
+                chunks.push(text.substring(i, i + LONG_TEXT_CHUNK_SIZE));
+            }
+
             const audioBlobs: Blob[] = [];
-            const RATE_LIMIT_DELAY_MS = 4100; // 4.1 seconds, safely under 15 RPM
+            const allTimedWords: TimedWord[] = [];
+            let totalDuration = 0;
 
-            for (let i = 0; i < totalChunks; i++) {
-                const chunk = textChunks[i];
-                const chunkNum = i + 1;
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                setStatusMessage(`Đang xử lý phần ${i + 1}/${chunks.length}...`);
                 
-                const remainingTime = Math.round(((totalChunks - chunkNum) * RATE_LIMIT_DELAY_MS) / 1000);
-                setEstimatedTime(remainingTime);
-                setStatusMessage(`Đang xử lý phần ${chunkNum}/${totalChunks}...`);
-                addLog(`Đang xử lý phần ${chunkNum}/${totalChunks}.`);
-                
-                const audioContent = await generateSpeech(apiKey, chunk, selectedVoice === 'auto' ? 'Kore' : selectedVoice);
-                
-                addLog(`Đã nhận được âm thanh cho phần ${chunkNum}.`);
-                const decoded = decode(audioContent);
-                audioBlobs.push(createWavBlob(decoded));
-                setProgress((chunkNum / totalChunks) * 100);
+                const { base64Audio, timedWords } = await generateSpeech(apiKey, chunk, selectedVoice === 'auto' ? undefined : selectedVoice, generateSrt);
+                const pcmData = decode(base64Audio);
+                audioBlobs.push(createWavBlob(pcmData));
 
-                if (chunkNum < totalChunks) {
-                    addLog(`Đang chờ ${RATE_LIMIT_DELAY_MS / 1000} giây để tránh giới hạn...`);
-                    setStatusMessage(`Đã xử lý xong phần ${chunkNum}/${totalChunks}. Đang chờ để tiếp tục...`);
-                    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY_MS));
+                if (generateSrt && timedWords) {
+                    const chunkDuration = calculatePcmDuration(pcmData);
+                    const parseTime = (s: string) => parseFloat(s.replace('s', ''));
+                    
+                    timedWords.forEach(word => {
+                        allTimedWords.push({
+                            ...word,
+                            startTime: `${parseTime(word.startTime) + totalDuration}s`,
+                            endTime: `${parseTime(word.endTime) + totalDuration}s`,
+                        });
+                    });
+                    totalDuration += chunkDuration;
+                }
+                
+                setProgress(((i + 1) / chunks.length) * 100);
+                
+                if (i < chunks.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, TTS_REQUEST_INTERVAL_MS));
                 }
             }
-
-            let finalBlob: Blob;
-            if (audioBlobs.length > 1) {
-                setStatusMessage('Đang ghép các tệp âm thanh...');
-                addLog('Đang ghép các tệp âm thanh...');
-                finalBlob = await stitchWavBlobs(audioBlobs);
-            } else {
-                finalBlob = audioBlobs[0];
+            
+            setStatusMessage('Đang ghép các file âm thanh...');
+            const finalBlob = await stitchWavBlobs(audioBlobs);
+            setAudioBlob(finalBlob);
+            
+            if (generateSrt && allTimedWords.length > 0) {
+                setStatusMessage('Đang tạo file phụ đề...');
+                const srt = createSrtContent(allTimedWords);
+                setSrtContent(srt);
             }
             
-            setAudioBlob(finalBlob);
-            setAudioUrl(URL.createObjectURL(finalBlob));
-            
-            setStatusMessage('Tổng hợp thành công!');
-            addLog('Tổng hợp thành công!');
-            onSetNotification({ type: 'success', message: 'Tổng hợp giọng nói thành công.' });
-            reportTtsUsage(textToSynthesize.length);
-
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'Đã xảy ra lỗi không xác định.';
-            setStatusMessage(`Lỗi: ${message}`);
-            addLog(`Lỗi: ${message}`);
-            onSetNotification({ type: 'error', message: `Tổng hợp thất bại: ${message}` });
+            await reportTtsUsage(text.length);
+            onSetNotification({ type: 'success', message: 'Tổng hợp giọng nói thành công!' });
+        } catch (e) {
+            const errorMessage = e instanceof Error ? e.message : 'Đã xảy ra lỗi không xác định.';
+            setError(errorMessage);
+            onSetNotification({ type: 'error', message: errorMessage });
         } finally {
             setIsLoading(false);
-            setProgress(0);
-            setEstimatedTime(0);
+            setStatusMessage('');
         }
-    }, [text, selectedVoice, onSetNotification, apiKey, audioUrl]);
+    }, [text, apiKey, selectedVoice, isOverLimit, characterLimit, user.tier, onSetNotification, generateSrt]);
+
+    const handlePlayPause = () => {
+        const audio = audioRef.current;
+        if (audio) {
+            if (isPlaying) {
+                audio.pause();
+            } else {
+                audio.play();
+            }
+        }
+    };
     
-    const handleDownload = () => {
-        if (!audioUrl) return;
+    const handleDownload = (blob: Blob, filename: string) => {
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = audioUrl;
-        a.download = 'tts_by_kiosoo.wav';
+        a.href = url;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-    };
-
-    const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        const newText = e.target.value;
-        if (newText.length <= MAX_TEXT_LENGTH) {
-            setText(newText);
-        }
+        URL.revokeObjectURL(url);
     };
 
     return (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg shadow-xl p-6 md:p-8 space-y-6">
-            <div className="flex justify-between items-center flex-wrap gap-2">
-                <h2 className="text-xl font-bold text-white">Advanced Text-to-Speech</h2>
-                 <span className={`px-3 py-1 text-xs font-semibold rounded-full ${tierStyles[user.tier]}`}>
-                    Gói {user.tier}
-                </span>
-            </div>
-            <div className="relative">
-                <textarea
-                    id="tts-text"
-                    value={text}
-                    onChange={handleTextChange}
-                    placeholder="Nhập văn bản của bạn ở đây..."
-                    className="w-full bg-gray-900 border border-gray-600 rounded-lg p-4 resize-y focus:ring-2 focus:ring-purple-500 transition-all duration-200 text-gray-200 placeholder-gray-500 min-h-[200px]"
-                    disabled={isLoading}
-                    rows={8}
-                />
-                <div className="absolute bottom-2 right-3 text-xs text-gray-400">
-                    {text.length.toLocaleString()} / {MAX_TEXT_LENGTH === Infinity ? 'Vô hạn' : MAX_TEXT_LENGTH.toLocaleString()}
-                </div>
-            </div>
-
-            <div className="flex flex-wrap items-end gap-4">
-                 <div className="flex-grow min-w-[200px]">
-                    <label htmlFor="voice-select" className="block text-sm font-medium text-gray-300 mb-1">
-                        Voice
-                    </label>
-                    <select
-                        id="voice-select"
-                        value={selectedVoice}
-                        onChange={(e) => setSelectedVoice(e.target.value)}
-                        className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+        <div className="space-y-6">
+            <h2 className="text-xl font-semibold text-gray-200">Advanced Text-to-Speech</h2>
+            <div className="p-6 bg-gray-800/50 border border-gray-700 rounded-lg space-y-4">
+                 <div className="flex justify-end">
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".txt" className="hidden" />
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isLoading}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded-md transition-colors disabled:opacity-50"
                     >
-                        {TTS_VOICES.map(voice => (
-                            <option key={voice.id} value={voice.id}>{voice.name}</option>
-                        ))}
-                    </select>
-                     <p className="text-xs text-cyan-400 mt-1">Multilingual text detected. 'Automatic' voice is recommended.</p>
+                        <DocumentTextIcon />
+                        Tải lên .txt
+                    </button>
                  </div>
+                 <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    placeholder="Nhập văn bản dài của bạn ở đây, hoặc tải lên từ file .txt..."
+                    className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 resize-y focus:ring-2 focus:ring-purple-500 transition-all duration-200 text-gray-200 placeholder-gray-500 min-h-[200px]"
+                    rows={8}
+                    disabled={isLoading}
+                />
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                     <div className="relative w-full sm:w-64">
+                        <select
+                            value={selectedVoice}
+                            onChange={e => setSelectedVoice(e.target.value)}
+                            className="w-full appearance-none bg-gray-700 border border-gray-600 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                            disabled={isLoading}
+                        >
+                            {TTS_VOICES.map(voice => (
+                                <option key={voice.id} value={voice.id}>{voice.name}</option>
+                            ))}
+                        </select>
+                        <ChevronDownIcon className="h-5 w-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <p className="text-xs text-gray-500 mt-1.5 px-1">Tất cả giọng đọc đều hỗ trợ Tiếng Việt, Anh, Nhật, Hàn, Trung.</p>
+                    </div>
+
+                    <div className="text-right w-full sm:w-auto space-y-2">
+                        <div>
+                            <p className={`font-mono text-sm ${isOverLimit ? 'text-red-400' : 'text-gray-400'}`}>
+                                {text.length.toLocaleString()} / {characterLimit === Infinity ? '∞' : characterLimit.toLocaleString()}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                                Gói của bạn: <span className="font-semibold text-cyan-400">{user.tier}</span>
+                                <button onClick={() => setIsSubscriptionModalOpen(true)} className="ml-1 text-cyan-500 hover:underline text-xs">(Xem chi tiết)</button>
+                            </p>
+                        </div>
+                        <label className="flex items-center justify-end gap-2 cursor-pointer text-sm text-gray-300 hover:text-white">
+                            <input
+                                type="checkbox"
+                                checked={generateSrt}
+                                onChange={(e) => setGenerateSrt(e.target.checked)}
+                                disabled={isLoading}
+                                className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
+                            />
+                            Tạo file phụ đề (.srt)
+                        </label>
+                    </div>
+                </div>
                  <button
-                    onClick={handleSynthesize}
-                    disabled={isLoading || !text.trim()}
-                    className="px-6 py-3 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-600 flex items-center justify-center gap-2 transition-colors duration-200 text-base"
+                    onClick={handleGenerateSpeech}
+                    disabled={isLoading || !text.trim() || isOverLimit}
+                    className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
                 >
-                    {isLoading && <LoadingSpinner className="h-5 w-5" />}
-                    {isLoading ? 'Đang tạo...' : 'Generate Audio'}
+                    {isLoading ? <LoadingSpinner /> : null}
+                    {isLoading ? 'Đang tạo âm thanh...' : 'Tạo âm thanh'}
                 </button>
             </div>
             
-            <div className="bg-gray-900/70 border border-gray-700 rounded-lg min-h-[90px] p-4 flex flex-col justify-center items-center">
-                {isLoading ? (
-                    <div className="w-full space-y-2 px-2">
-                        <div className="w-full bg-gray-700 rounded-full h-4 relative overflow-hidden">
-                            <div 
-                                className="bg-gradient-to-r from-blue-500 to-purple-600 h-4 rounded-full transition-all duration-500 ease-linear flex items-center justify-center" 
-                                style={{ width: `${progress}%` }}
-                            >
-                                <span className="text-xs font-bold text-white shadow-sm">{Math.round(progress)}%</span>
+            {(isLoading || audioBlob || error) && (
+                <div className="p-6 bg-gray-800/50 border border-gray-700 rounded-lg">
+                    <h3 className="text-lg font-semibold mb-4 text-gray-300">Kết quả</h3>
+                    {isLoading && (
+                        <div className="space-y-3">
+                            <div className="w-full bg-gray-700 rounded-full h-2.5">
+                                <div className="bg-purple-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
+                            </div>
+                            <p className="text-sm text-center text-purple-300">{statusMessage}</p>
+                        </div>
+                    )}
+                    {error && !isLoading && (
+                         <div className="flex items-center p-4 bg-red-900/30 border border-red-700 rounded-md">
+                            <ErrorIcon className="h-6 w-6 text-red-400 mr-3 flex-shrink-0" />
+                            <div>
+                                <h4 className="font-bold text-red-400">Tạo âm thanh thất bại</h4>
+                                <p className="text-sm text-red-300 mt-1">{error}</p>
                             </div>
                         </div>
-                        <div className="text-center">
-                            <p className="text-sm text-gray-300 animate-pulse">{statusMessage}</p>
-                            {progress < 100 && estimatedTime > 0 && (
-                                <p className="text-xs text-gray-400 mt-1">
-                                    Thời gian chờ còn lại: ~{estimatedTime} giây
-                                </p>
-                            )}
+                    )}
+                    {audioBlob && !isLoading && (
+                        <div className="flex flex-wrap items-center gap-4 p-3 bg-gray-900 rounded-lg">
+                             <button onClick={handlePlayPause} className="p-2 text-white bg-cyan-600 hover:bg-cyan-700 rounded-full transition-colors">
+                                {isPlaying ? <PauseIcon /> : <PlayIcon />}
+                            </button>
+                            <audio ref={audioRef} src={URL.createObjectURL(audioBlob)} className="hidden"></audio>
+                            <div className="flex-grow text-sm text-gray-300">
+                                Âm thanh đã sẵn sàng.
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {srtContent && (
+                                    <button 
+                                        onClick={() => handleDownload(new Blob([srtContent], { type: 'text/plain' }), `subtitles_${Date.now()}.srt`)} 
+                                        className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+                                    >
+                                        <SrtIcon />
+                                        Tải xuống (.srt)
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={() => handleDownload(audioBlob, `tts_output_${Date.now()}.wav`)} 
+                                    className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+                                >
+                                    <DownloadIcon />
+                                    Tải xuống (.wav)
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                ) : audioUrl ? (
-                    <div className="w-full space-y-3">
-                      <audio controls src={audioUrl} ref={audioRef} className="w-full"></audio>
-                      <button onClick={handleDownload} className="w-full mt-2 px-4 py-2 text-sm bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 transition-colors duration-200">
-                        <DownloadIcon />
-                        Tải xuống file .wav
-                      </button>
-                    </div>
-                ) : (
-                     <p className="text-gray-500">Your generated audio will appear here.</p>
-                )}
-            </div>
+                    )}
+                </div>
+            )}
             
-             <div>
-                <button 
-                    onClick={() => setIsLogsOpen(!isLogsOpen)} 
-                    className="w-full flex justify-between items-center p-3 bg-gray-700 hover:bg-gray-600 rounded-md text-sm font-medium"
-                >
-                    Processing Logs
-                    <ChevronDownIcon className={`h-5 w-5 transition-transform ${isLogsOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {isLogsOpen && (
-                    <div className="mt-2 p-4 bg-gray-900 rounded-md border border-gray-700 max-h-48 overflow-y-auto">
-                        {logs.length > 0 ? logs.map((log, i) => 
-                            <p key={i} className="text-xs text-gray-400 font-mono break-words">{log}</p>
-                        ) : <p className="text-xs text-gray-500">No logs yet.</p>}
-                    </div>
-                )}
-            </div>
+            {isSubscriptionModalOpen && (
+                <SubscriptionModal onClose={() => setIsSubscriptionModalOpen(false)} userTier={user.tier} />
+            )}
         </div>
     );
 };

@@ -136,6 +136,18 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSetNotification }) => {
                         {isLoginView ? 'Chưa có tài khoản? Đăng ký' : 'Đã có tài khoản? Đăng nhập'}
                     </button>
                 </div>
+
+                <div className="mt-6 pt-4 border-t border-gray-700 text-center">
+                    <p className="text-sm text-gray-400">Chưa có Gemini API Key?</p>
+                    <a 
+                        href="https://aistudio.google.com/app/apikey" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-sm text-cyan-400 hover:underline font-semibold"
+                    >
+                        Lấy key miễn phí tại Google AI Studio
+                    </a>
+                </div>
             </div>
         </div>
     );

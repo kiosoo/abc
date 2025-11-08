@@ -51,8 +51,9 @@ const ChatTab: React.FC<ChatTabProps> = ({ onSetNotification, apiKey }) => {
 
         setIsLoadingAudio(true);
         try {
-            const audioContent = await generateSpeech(apiKey, response, 'Kore');
-            await playAudio(audioContent);
+            // FIX: Destructure the result from `generateSpeech` to get `base64Audio`, as `playAudio` expects a string.
+            const { base64Audio } = await generateSpeech(apiKey, response, 'Kore');
+            await playAudio(base64Audio);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Đã xảy ra lỗi không xác định.';
             onSetNotification({ type: 'error', message: `Tạo âm thanh thất bại: ${errorMessage}` });

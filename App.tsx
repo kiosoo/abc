@@ -75,7 +75,11 @@ const App: React.FC = () => {
                 return user.isAdmin ? <AdminTab onSetNotification={addNotification} /> : null;
             case 'tts':
             default:
-                return <TtsTab onSetNotification={addNotification} user={user} apiKey={apiKey} />;
+                return <TtsTab 
+                    onSetNotification={addNotification} 
+                    user={user} 
+                    apiKey={apiKey} 
+                />;
         }
     };
 

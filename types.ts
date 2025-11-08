@@ -1,4 +1,3 @@
-
 // FIX: Define base interfaces for VercelRequest and VercelResponse to avoid
 // dependency on unresolved 'http' module from Node.js types.
 interface BaseVercelRequest {
