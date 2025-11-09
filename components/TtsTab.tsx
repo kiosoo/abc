@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Notification, User, ApiKeyEntry, Project, SubscriptionTier, LogEntry } from '@/types';
 import { TTS_VOICES, DEFAULT_VOICE, LONG_TEXT_CHUNK_SIZE, TIER_LIMITS, TTS_DAILY_API_LIMIT } from '@/constants';
@@ -75,7 +74,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
 
         pollingIntervalRef.current = window.setInterval(async () => {
             try {
-                const res = await fetch(`/api/tts/status?jobId=${jobId}`);
+                const res = await fetch(`/api/tts?action=status&jobId=${jobId}`);
                 if (!res.ok) {
                     throw new Error('Không thể kiểm tra trạng thái tác vụ.');
                 }
@@ -89,13 +88,13 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                     setError(data.error || 'Tác vụ thất bại mà không có thông báo lỗi cụ thể.');
                     addLog(`Thất bại: ${data.error}`, 'error');
                     resetState();
-                } else if (newProgress >= 100) {
+                } else if (newProgress >= 100 && data.processedChunks === data.totalChunks) {
                     addLog('Đã xử lý tất cả các phần. Đang ghép âm thanh...', 'system');
                     setProgressStatus('Đang hoàn tất...');
                     if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
 
                     // Fetch the final result
-                    const resultRes = await fetch(`/api/tts/result?jobId=${jobId}`);
+                    const resultRes = await fetch(`/api/tts?action=result&jobId=${jobId}`);
                     if (!resultRes.ok) {
                         const errorData = await resultRes.json();
                         throw new Error(errorData.message || 'Không thể tải xuống kết quả âm thanh cuối cùng.');
@@ -143,7 +142,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                  throw new Error("Tính năng này yêu cầu gói Star trở lên.");
             }
 
-            const startRes = await fetch('/api/tts/start', {
+            const startRes = await fetch('/api/tts?action=start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text, voice: selectedVoice }),
@@ -183,7 +182,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             }
         };
         loadProjects();
-    }, []);
+    }, [onSetNotification]);
 
      const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];

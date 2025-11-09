@@ -1,4 +1,3 @@
-
 import { User, BugReport, SubscriptionTier, Project } from '@/types';
 
 // This service now exclusively calls API endpoints. No more local simulation.
@@ -16,27 +15,31 @@ async function fetcher<T>(url: string, options?: RequestInit, responseType: 'jso
 }
 
 export const loginUser = (username: string, password: string): Promise<User> => {
-    return fetcher<User>('/api/auth/login', {
+    return fetcher<User>('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ action: 'login', username, password }),
     });
 };
 
 export const registerUser = (userData: Omit<User, 'id' | 'isAdmin' | 'tier' | 'subscriptionExpiresAt' | 'createdAt' | 'lastLoginAt' | 'ipAddress' | 'usage'>): Promise<User> => {
-    return fetcher<User>('/api/auth/register', {
+    return fetcher<User>('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData),
+        body: JSON.stringify({ action: 'register', ...userData }),
     });
 };
 
 export const fetchCurrentUser = (): Promise<User | null> => {
-    return fetcher<User | null>('/api/user');
+    return fetcher<User | null>('/api/users?currentUser=true');
 };
 
 export const logoutUser = (): Promise<void> => {
-    return fetcher<void>('/api/auth/logout', { method: 'POST' });
+    return fetcher<void>('/api/auth', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'logout' }),
+    });
 };
 
 export const fetchAllUsers = (): Promise<Omit<User, 'password'>[]> => {
@@ -60,7 +63,7 @@ export const deleteUser = (id: string): Promise<void> => {
 };
 
 export const reportTtsUsage = (characterCount: number): Promise<void> => {
-    return fetcher<void>('/api/usage/tts', {
+    return fetcher<void>('/api/usage?type=tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ characterCount }),

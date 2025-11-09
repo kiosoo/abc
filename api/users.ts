@@ -1,9 +1,31 @@
 import { apiHandler } from './_lib/apiHandler.js';
 import { User } from './_lib/types.js';
-import { getAllUsers, updateUser, deleteUser as deleteUserFromDb } from './_lib/userManagement.js';
+import { getAllUsers, updateUser, deleteUser as deleteUserFromDb, findUserById } from './_lib/userManagement.js';
 
 export default apiHandler({
     GET: async (req, res, session) => {
+        const { currentUser } = req.query;
+
+        if (currentUser) {
+            // Logic to fetch the current logged-in user (previously in api/user.ts)
+            if (session.id) {
+                const user = await findUserById(session.id);
+                if (user) {
+                    const { password, ...userToSend } = user;
+                    res.status(200).json(userToSend);
+                    return;
+                } else {
+                    session.destroy();
+                    res.status(404).json({ message: "User not found" });
+                    return;
+                }
+            } else {
+                res.status(200).json(null);
+                return;
+            }
+        }
+
+        // Original logic to fetch all users (admin only)
         if (!session.isAdmin) {
             res.status(403).json({ message: 'Không có quyền truy cập' });
             return;
@@ -23,7 +45,6 @@ export default apiHandler({
         }
         const updates: Partial<Omit<User, 'id' | 'password'>> = {};
         if (tier) updates.tier = tier;
-        // Allow setting expiration to null
         if (subscriptionExpiresAt !== undefined) updates.subscriptionExpiresAt = subscriptionExpiresAt;
         if (managedApiKeys !== undefined) updates.managedApiKeys = managedApiKeys;
 
