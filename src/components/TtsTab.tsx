@@ -99,63 +99,47 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             currentJobId = newJobId;
             
             addLog(`Tác vụ đã được tạo. Tổng số phần: ${totalChunks}.`, 'info');
-            
-    
-            // 2. Process chunks sequentially
-            const concurrencyLimit = 1;
+
+            // 2. Process chunks sequentially with a simple for loop
             addLog(`Bắt đầu xử lý tuần tự...`, 'system');
-
             const pcmChunksMap = new Map<number, Uint8Array>();
-            let chunksProcessedCount = 0;
             let successfulChunksCount = 0;
-            
-            const chunkIndices = Array.from({ length: totalChunks }, (_, i) => i);
-            const taskQueue = [...chunkIndices];
-    
-            const worker = async () => {
-                 while (true) {
-                    if (isCancelledRef.current) break;
-                    const chunkIndex = taskQueue.shift();
-                    if (chunkIndex === undefined) break;
 
-                    try {
-                        const res = await fetch('/api/tts?action=processSingleChunk', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ jobId: newJobId, chunkIndex }),
-                        });
-    
-                        if (!res.ok) {
-                            const errorData = await res.json();
-                            throw new Error(errorData.message || `Lỗi không xác định`);
-                        }
-    
-                        const { base64Audio } = await res.json();
-                        pcmChunksMap.set(chunkIndex, decode(base64Audio));
-                        addLog(`Xử lý thành công phần ${chunkIndex + 1}.`, 'success');
-                        successfulChunksCount++;
-    
-                    } catch (e) {
-                        const errorMsg = e instanceof Error ? e.message : `Xử lý thất bại.`;
-                        addLog(`Phần ${chunkIndex + 1}: ${errorMsg}`, 'error');
-                        
-                        // Add helpful hint for quota errors
-                        const lowerErrorMsg = errorMsg.toLowerCase();
-                        if (lowerErrorMsg.includes('hạn ngạch') || lowerErrorMsg.includes('quota')) {
-                            addLog(`Gợi ý: Các API key từ cùng một dự án Google Cloud sẽ chia sẻ chung một hạn ngạch. Hãy cân nhắc bật thanh toán trên dự án để gỡ bỏ giới hạn.`, 'info');
-                        }
-
-                        setError(prev => prev ? `${prev}\n- ${errorMsg}` : `- ${errorMsg}`);
-                    } finally {
-                        chunksProcessedCount++;
-                        setProgressStatus(`Đang xử lý phần ${chunksProcessedCount}/${totalChunks}...`);
-                        setProgress((chunksProcessedCount / totalChunks) * 100);
-                    }
+            for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+                if (isCancelledRef.current) {
+                    break;
                 }
-            };
-    
-            const workers = Array(concurrencyLimit).fill(null).map(() => worker());
-            await Promise.all(workers);
+                setProgressStatus(`Đang xử lý phần ${chunkIndex + 1}/${totalChunks}...`);
+                try {
+                    const res = await fetch('/api/tts?action=processSingleChunk', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ jobId: newJobId, chunkIndex }),
+                    });
+
+                    if (!res.ok) {
+                        const errorData = await res.json();
+                        throw new Error(errorData.message || `Lỗi không xác định`);
+                    }
+
+                    const { base64Audio } = await res.json();
+                    pcmChunksMap.set(chunkIndex, decode(base64Audio));
+                    addLog(`Xử lý thành công phần ${chunkIndex + 1}.`, 'success');
+                    successfulChunksCount++;
+                } catch (e) {
+                    const errorMsg = e instanceof Error ? e.message : `Xử lý thất bại.`;
+                    addLog(`Phần ${chunkIndex + 1}: ${errorMsg}`, 'error');
+                    
+                    const lowerErrorMsg = errorMsg.toLowerCase();
+                    if (lowerErrorMsg.includes('hạn ngạch') || lowerErrorMsg.includes('quota')) {
+                        addLog(`Gợi ý: Các API key từ cùng một dự án Google Cloud sẽ chia sẻ chung một hạn ngạch. Hãy cân nhắc bật thanh toán trên dự án để gỡ bỏ giới hạn.`, 'info');
+                    }
+
+                    setError(prev => prev ? `${prev}\n- ${errorMsg}` : `- ${errorMsg}`);
+                } finally {
+                     setProgress(((chunkIndex + 1) / totalChunks) * 100);
+                }
+            }
     
             if (isCancelledRef.current) {
                 throw new Error('Đã hủy tác vụ.');
@@ -217,7 +201,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                 }
             }
         }
-    }, [text, selectedVoice, onSetNotification, resetState, onUsageUpdate, user.managedApiKeys]);
+    }, [text, selectedVoice, onSetNotification, resetState, onUsageUpdate]);
 
 
     const handleGenerateSpeechSelfManaged = useCallback(async () => {
@@ -241,100 +225,85 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             const chunks = smartSplit(text, LONG_TEXT_CHUNK_SIZE);
             addLog(`Văn bản được chia thành ${chunks.length} phần.`, 'info');
     
+            addLog(`Bắt đầu xử lý tuần tự...`, 'system');
             const pcmChunksMap = new Map<number, Uint8Array>();
-            let chunksProcessedCount = 0;
             let successfulChunksCount = 0;
-            
             const keyPoolRef = { current: JSON.parse(JSON.stringify(initialKeyPool)) as ApiKeyEntry[] };
-            const taskQueue = [...chunks.entries()]; 
-            
-            let nextKeyIndex = 0;
-    
-            const worker = async () => {
-                while (true) {
-                    if (isCancelledRef.current) break;
-                    const task = taskQueue.shift();
-                    if (!task) break;
-    
-                    const [chunkIndex, chunkText] = task;
-                    let processed = false;
-                    let finalError = 'Tất cả các key đều không thể xử lý chunk này.';
-    
-                    const keyStartIndex = nextKeyIndex;
-                    nextKeyIndex = (nextKeyIndex + 1) % availableKeys.length;
+            let nextKeyStartIndex = 0;
 
-                    for (let i = 0; i < availableKeys.length; i++) {
-                        if (isCancelledRef.current) break;
-                        
-                        const keyToTry = availableKeys[(keyStartIndex + i) % availableKeys.length];
-                        const liveKeyEntry = keyPoolRef.current.find(k => k.key === keyToTry.key)!;
-    
-                        if (liveKeyEntry.usage.count >= TTS_DAILY_API_LIMIT) continue;
-    
-                        try {
-                            const ai = new GoogleGenAI({ apiKey: liveKeyEntry.key });
-                            const response = await ai.models.generateContent({
-                                model: "gemini-2.5-flash-preview-tts",
-                                contents: [{ parts: [{ text: chunkText }] }],
-                                config: {
-                                    responseModalities: [Modality.AUDIO],
-                                    speechConfig: {
-                                        voiceConfig: {
-                                            prebuiltVoiceConfig: { voiceName: selectedVoice === 'auto' ? 'Kore' : selectedVoice },
-                                        },
+            for (const [chunkIndex, chunkText] of chunks.entries()) {
+                if (isCancelledRef.current) {
+                    break;
+                }
+                setProgressStatus(`Đang xử lý phần ${chunkIndex + 1}/${chunks.length}...`);
+                let processed = false;
+                let finalError = 'Tất cả các key đều không thể xử lý chunk này.';
+
+                for (let i = 0; i < availableKeys.length; i++) {
+                    if (isCancelledRef.current) break;
+
+                    const keyTryIndex = (nextKeyStartIndex + i) % availableKeys.length;
+                    const keyToTry = availableKeys[keyTryIndex];
+                    const liveKeyEntry = keyPoolRef.current.find(k => k.key === keyToTry.key)!;
+
+                    if (liveKeyEntry.usage.count >= TTS_DAILY_API_LIMIT) continue;
+
+                    try {
+                        const ai = new GoogleGenAI({ apiKey: liveKeyEntry.key });
+                        const response = await ai.models.generateContent({
+                            model: "gemini-2.5-flash-preview-tts",
+                            contents: [{ parts: [{ text: chunkText }] }],
+                            config: {
+                                responseModalities: [Modality.AUDIO],
+                                speechConfig: {
+                                    voiceConfig: {
+                                        prebuiltVoiceConfig: { voiceName: selectedVoice === 'auto' ? 'Kore' : selectedVoice },
                                     },
                                 },
-                            });
-    
-                            const audioPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-                            const base64Audio = audioPart?.inlineData?.data;
-    
-                            if (!base64Audio) throw new Error('API không trả về dữ liệu âm thanh.');
-                            
-                            pcmChunksMap.set(chunkIndex, decode(base64Audio));
-                            liveKeyEntry.usage.count++;
-                            successfulChunksCount++;
-                            addLog(`Phần ${chunkIndex + 1}: Thành công với key ...${liveKeyEntry.key.slice(-4)}. Lượt dùng: ${liveKeyEntry.usage.count}/${TTS_DAILY_API_LIMIT}.`, 'success');
-                            processed = true;
-                            break;
-    
-                        } catch (e: any) {
-                            const errorString = e.toString();
-                             let keyErrorMsg = '';
-                            if (errorString.includes('RESOURCE_EXHAUSTED') || errorString.includes('429')) {
-                                keyErrorMsg = `Key ...${liveKeyEntry.key.slice(-4)} đã hết hạn ngạch.`;
-                                liveKeyEntry.usage.count = TTS_DAILY_API_LIMIT;
-                            } else {
-                                keyErrorMsg = `Lỗi với key ...${liveKeyEntry.key.slice(-4)}: ${e.message}`;
-                            }
-                            addLog(`Phần ${chunkIndex + 1}: ${keyErrorMsg} Đang thử key tiếp theo...`, 'info');
-                            finalError = keyErrorMsg;
-                        }
-                    } 
-    
-                    if (!processed && !isCancelledRef.current) {
-                        const finalLogMessage = `Phần ${chunkIndex + 1}: Xử lý thất bại. Lỗi cuối cùng: ${finalError}`;
-                        addLog(finalLogMessage, 'error');
-                        
-                        const lowerFinalError = finalError.toLowerCase();
-                        if (lowerFinalError.includes('hạn ngạch') || lowerFinalError.includes('quota')) {
-                             addLog(`Gợi ý: Các API key từ cùng một dự án Google Cloud sẽ chia sẻ chung một hạn ngạch. Hãy cân nhắc bật thanh toán trên dự án để gỡ bỏ giới hạn.`, 'info');
-                        }
+                            },
+                        });
 
-                        setError(prev => (prev ? prev + `\n- ${finalLogMessage}` : `- ${finalLogMessage}`));
+                        const audioPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+                        const base64Audio = audioPart?.inlineData?.data;
+
+                        if (!base64Audio) throw new Error('API không trả về dữ liệu âm thanh.');
+                        
+                        pcmChunksMap.set(chunkIndex, decode(base64Audio));
+                        liveKeyEntry.usage.count++;
+                        successfulChunksCount++;
+                        addLog(`Phần ${chunkIndex + 1}: Thành công với key ...${liveKeyEntry.key.slice(-4)}. Lượt dùng: ${liveKeyEntry.usage.count}/${TTS_DAILY_API_LIMIT}.`, 'success');
+                        processed = true;
+                        nextKeyStartIndex = (keyTryIndex + 1) % availableKeys.length;
+                        break;
+
+                    } catch (e: any) {
+                        const errorString = e.toString();
+                        let keyErrorMsg = '';
+                        if (errorString.includes('RESOURCE_EXHAUSTED') || errorString.includes('429')) {
+                            keyErrorMsg = `Key ...${liveKeyEntry.key.slice(-4)} đã hết hạn ngạch.`;
+                            liveKeyEntry.usage.count = TTS_DAILY_API_LIMIT;
+                        } else {
+                            keyErrorMsg = `Lỗi với key ...${liveKeyEntry.key.slice(-4)}: ${e.message}`;
+                        }
+                        addLog(`Phần ${chunkIndex + 1}: ${keyErrorMsg} Đang thử key tiếp theo...`, 'info');
+                        finalError = keyErrorMsg;
                     }
-    
-                    chunksProcessedCount++;
-                    setProgressStatus(`Đang xử lý phần ${chunksProcessedCount}/${chunks.length}...`);
-                    setProgress((chunksProcessedCount / chunks.length) * 100);
+                } 
+
+                if (!processed && !isCancelledRef.current) {
+                    const finalLogMessage = `Phần ${chunkIndex + 1}: Xử lý thất bại. Lỗi cuối cùng: ${finalError}`;
+                    addLog(finalLogMessage, 'error');
+                    
+                    const lowerFinalError = finalError.toLowerCase();
+                    if (lowerFinalError.includes('hạn ngạch') || lowerFinalError.includes('quota')) {
+                        addLog(`Gợi ý: Các API key từ cùng một dự án Google Cloud sẽ chia sẻ chung một hạn ngạch. Hãy cân nhắc bật thanh toán trên dự án để gỡ bỏ giới hạn.`, 'info');
+                    }
+
+                    setError(prev => (prev ? prev + `\n- ${finalLogMessage}` : `- ${finalLogMessage}`));
                 }
-            };
-    
-            const concurrencyLimit = 1; // Always sequential
-            addLog(`Bắt đầu xử lý tuần tự...`, 'system');
-            
-            const workers = Array(concurrencyLimit).fill(null).map(() => worker());
-            await Promise.all(workers);
+                
+                setProgress(((chunkIndex + 1) / chunks.length) * 100);
+            }
     
             if (isCancelledRef.current) throw new Error('Đã hủy tác vụ.');
     
