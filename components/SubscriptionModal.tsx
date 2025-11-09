@@ -137,7 +137,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
         const isCurrentUserTier = userTier === tier;
 
         return (
-            <div className={`flex flex-col rounded-lg p-4 border-2 ${details.style.border} ${details.style.bg} relative`}>
+            <div className={`flex flex-col rounded-lg p-3 border-2 ${details.style.border} ${details.style.bg} relative`}>
                  {details.kind === 'managed' && (
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-purple-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 text-white shadow-lg">
                         <StarIcon className="w-4 h-4" />
@@ -148,20 +148,18 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                 <p className="text-center text-gray-400 mt-1 text-xs leading-tight">{details.description}</p>
 
                 {/* Price Block */}
-                <div className="my-3 text-center">
+                <div className="my-2 text-center">
                     {tier === SubscriptionTier.BASIC ? (
-                        <span className="text-3xl font-extrabold text-white">Miễn phí</span>
+                        <span className="text-2xl font-extrabold text-white">Miễn phí</span>
                     ) : (
                         <>
                             <div className="flex items-baseline justify-center gap-2">
-                                <span className="text-3xl font-extrabold text-white">{details.price}</span>
-                                {/* FIX: Check for property existence before rendering to prevent TypeScript errors. */}
-                                {'originalPrice' in details && <s className="text-lg text-gray-500">{details.originalPrice}</s>}
+                                <span className="text-2xl font-extrabold text-white">{details.price}</span>
+                                {'originalPrice' in details && <s className="text-base text-gray-500">{details.originalPrice}</s>}
                             </div>
-                            <span className="block text-xs font-medium text-gray-400 mb-2">/ tháng</span>
-                            {/* FIX: Check for property existence before rendering to prevent TypeScript errors. */}
+                            <span className="block text-xs font-medium text-gray-400 mb-1">/ tháng</span>
                             {'discount' in details && (
-                                <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
                                     {details.discount}
                                 </span>
                             )}
@@ -170,23 +168,22 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                 </div>
 
                 {/* Limit Info Block */}
-                <div className="my-2 text-center min-h-[2.5rem]">
+                <div className="my-1 text-center">
                     {details.kind === 'managed' ? (
                         <>
                             <span className="text-base font-bold text-white">{details.limitText}</span>
                             <span className="block text-xs font-medium text-gray-400">{details.subtext}</span>
                         </>
-                    ) : tier !== SubscriptionTier.BASIC ? (
+                    ) : details.kind === 'standard' && tier !== SubscriptionTier.BASIC ? (
                          <>
-                            {/* @ts-ignore */}
                             <span className="text-base font-bold text-white">{details.limit === Infinity ? 'Vô hạn' : details.limit.toLocaleString()}</span>
                             <span className="block text-xs font-medium text-gray-400"> ký tự / lần nhập</span>
                         </>
-                    ) : null}
+                    ) : <div className="h-6" />}
                 </div>
 
 
-                <ul className="space-y-0.5 text-gray-300 flex-grow text-xs">
+                <ul className="space-y-0.5 text-gray-300 text-xs my-2">
                     {details.features.map((feature, index) => (
                         <li key={index} className="flex items-start">
                             <CheckIcon className="w-4 h-4 text-green-400 mr-2 flex-shrink-0 mt-0.5" />
@@ -198,7 +195,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                 {isCurrentUserTier ? (
                     <button
                         disabled
-                        className={`w-full mt-3 py-1 px-4 rounded-md font-semibold text-white text-sm transition-colors ${details.style.button}`}
+                        className={`w-full mt-auto py-1 px-4 rounded-md font-semibold text-white text-sm transition-colors ${details.style.button}`}
                     >
                         Gói Hiện Tại
                     </button>
@@ -207,7 +204,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                         href="https://zalo.me/0985351304"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`block text-center w-full mt-3 py-1 px-4 rounded-md font-semibold text-white text-sm transition-colors ${details.style.button}`}
+                        className={`block text-center w-full mt-auto py-1 px-4 rounded-md font-semibold text-white text-sm transition-colors ${details.style.button}`}
                     >
                         Liên hệ Nâng cấp
                     </a>
@@ -218,7 +215,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
 
     return (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-5xl relative animate-fade-in flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-6xl relative animate-fade-in" onClick={e => e.stopPropagation()}>
                 <style>{`
                     @keyframes fade-in {
                         from { opacity: 0; transform: scale(0.95); }
@@ -226,13 +223,13 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                     }
                     .animate-fade-in { animation: fade-in 0.2s ease-out forwards; }
                 `}</style>
-                <div className="p-4 text-center border-b border-gray-700 flex-shrink-0">
-                    <h2 className="text-2xl font-bold text-white">Các Gói Dịch Vụ</h2>
-                    <p className="text-gray-400 mt-1">Chọn gói phù hợp nhất với nhu cầu sử dụng của bạn.</p>
+                <div className="p-3 text-center border-b border-gray-700">
+                    <h2 className="text-xl font-bold text-white">Các Gói Dịch Vụ</h2>
+                    <p className="text-gray-400 mt-1 text-sm">Chọn gói phù hợp nhất với nhu cầu sử dụng của bạn.</p>
                 </div>
 
-                <div className="p-4 flex-grow overflow-y-auto">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="p-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                         <PlanCard tier={SubscriptionTier.BASIC} />
                         <PlanCard tier={SubscriptionTier.PRO} />
                         <PlanCard tier={SubscriptionTier.ULTRA} />
@@ -241,7 +238,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                         <PlanCard tier={SubscriptionTier.VVIP} />
                     </div>
 
-                    <div className="mt-6 p-4 bg-gray-800/50 border border-gray-700 rounded-lg text-sm">
+                    <div className="mt-3 p-3 bg-gray-800/50 border border-gray-700 rounded-lg text-sm">
                         <h4 className="font-bold text-cyan-400 mb-2 flex items-center gap-2">
                             <InfoIcon className="h-5 w-5" />
                             Giải thích về Giới hạn
@@ -261,7 +258,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                         </ul>
                     </div>
                 </div>
-                 <div className="p-4 bg-gray-900/50 text-right rounded-b-xl border-t border-gray-700 flex-shrink-0">
+                 <div className="p-3 bg-gray-900/50 text-right rounded-b-xl border-t border-gray-700">
                     <button onClick={onClose} className="px-5 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600 text-sm font-medium">Đóng</button>
                 </div>
             </div>
