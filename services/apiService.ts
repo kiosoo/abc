@@ -1,3 +1,4 @@
+
 import { User, BugReport, SubscriptionTier, Project } from '@/types';
 
 // This service now exclusively calls API endpoints. No more local simulation.
@@ -79,14 +80,6 @@ export const fetchBugReports = (): Promise<BugReport[]> => {
 };
 
 // --- New Service Functions ---
-
-export const generateManagedSpeech = (text: string, voice: string): Promise<Blob> => {
-    return fetcher<Blob>('/api/tts/managed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice }),
-    }, 'blob');
-};
 
 export const fetchProjects = (): Promise<Project[]> => {
     return fetcher<Project[]>('/api/projects');
