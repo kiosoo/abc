@@ -54,6 +54,14 @@ export interface Notification {
   message: string;
 }
 
+export interface LogEntry {
+  id: number;
+  message: string;
+  type: 'system' | 'info' | 'success' | 'error';
+  timestamp: string;
+}
+
+
 export enum ChatMode {
   STANDARD = 'standard',
   THINKING = 'thinking',

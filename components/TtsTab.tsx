@@ -1,10 +1,10 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Notification, User, ApiKeyEntry, Project, SubscriptionTier } from '@/types';
+import { Notification, User, ApiKeyEntry, Project, SubscriptionTier, LogEntry } from '@/types';
 import { TTS_VOICES, DEFAULT_VOICE, LONG_TEXT_CHUNK_SIZE, TIER_LIMITS, TTS_DAILY_API_LIMIT } from '@/constants';
 import { generateSpeech } from '@/services/geminiService';
 import { stitchWavBlobs, decode, createWavBlob } from '@/utils/audioUtils';
 import { getValidatedApiKeyPool } from '@/utils/apiKeyUtils';
-import { ChevronDownIcon, LoadingSpinner, DownloadIcon, ErrorIcon, DocumentTextIcon } from '@/components/Icons';
+import { ChevronDownIcon, LoadingSpinner, DownloadIcon, ErrorIcon, DocumentTextIcon, SystemIcon, InfoIcon, SuccessIcon } from '@/components/Icons';
 import { reportTtsUsage, fetchProjects, saveProject, deleteProject, generateManagedSpeech } from '@/services/apiService';
 import SubscriptionModal from '@/components/SubscriptionModal';
 
@@ -15,6 +15,18 @@ interface TtsTabProps {
     setApiKeyPool: (pool: ApiKeyEntry[]) => void;
 }
 
+const LogIcon: React.FC<{ type: LogEntry['type'] }> = ({ type }) => {
+    const commonClass = "h-4 w-4 mr-2 flex-shrink-0";
+    switch (type) {
+        case 'system': return <SystemIcon className={`${commonClass} text-gray-400`} />;
+        case 'info': return <InfoIcon className={`${commonClass} text-blue-400`} />;
+        case 'success': return <SuccessIcon className={`${commonClass} text-green-400`} />;
+        case 'error': return <ErrorIcon className={`${commonClass} text-red-400`} />;
+        default: return null;
+    }
+};
+
+
 const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, setApiKeyPool }) => {
     const [text, setText] = useState('');
     const [selectedVoice, setSelectedVoice] = useState(DEFAULT_VOICE);
@@ -22,7 +34,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     
     const [isLoading, setIsLoading] = useState(false);
     const [progress, setProgress] = useState(0);
-    const [statusMessage, setStatusMessage] = useState('');
+    const [logs, setLogs] = useState<LogEntry[]>([]);
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
     const [error, setError] = useState<string | null>(null);
     
@@ -33,6 +45,12 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     const isManagedUser = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(user.tier);
+    
+    const addLog = (message: string, type: LogEntry['type']) => {
+        const timestamp = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+        setLogs(prev => [...prev, { id: Date.now() + Math.random(), message, type, timestamp }]);
+    };
+
 
     useEffect(() => {
         if (!isManagedUser) {
@@ -92,26 +110,31 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     const handleGenerateSpeech = useCallback(async () => {
         setIsLoading(true);
         setProgress(0);
-        setStatusMessage('Bắt đầu quá trình tổng hợp...');
+        setLogs([]);
         setAudioBlob(null);
         setError(null);
+        
+        addLog('Bắt đầu quá trình tổng hợp...', 'system');
 
         try {
             if (isManagedUser) {
                 // --- Managed User Flow ---
                 const chunksCount = Math.ceil(text.length / LONG_TEXT_CHUNK_SIZE);
-                setStatusMessage(`Đang gửi yêu cầu xử lý ${chunksCount.toLocaleString()} phần văn bản song song...`);
+                addLog(`Đang gửi yêu cầu xử lý ${chunksCount.toLocaleString()} phần văn bản...`, 'info');
                 const finalBlob = await generateManagedSpeech(text, selectedVoice);
                 setAudioBlob(finalBlob);
                 setProgress(100);
+                addLog('Tổng hợp giọng nói thành công!', 'success');
             } else {
                 // --- Self-managed API Key Flow ---
+                addLog('Xác thực vùng chứa API key...', 'system');
                 const validatedPool = getValidatedApiKeyPool(apiKeyPool);
                 setApiKeyPool(validatedPool);
 
                 if (validatedPool.length === 0) {
                     throw new Error('Vui lòng thêm ít nhất một API Key trong phần Quản lý API Keys.');
                 }
+                 addLog(`Đã tìm thấy ${validatedPool.length} key hợp lệ.`, 'success');
                 if (isOverCharacterLimit) {
                     throw new Error(`Bạn đã vượt quá giới hạn ${characterLimit.toLocaleString()} ký tự của gói ${user.tier}.`);
                 }
@@ -120,6 +143,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                 for (let i = 0; i < text.length; i += LONG_TEXT_CHUNK_SIZE) {
                     chunks.push(text.substring(i, i + LONG_TEXT_CHUNK_SIZE));
                 }
+                addLog(`Văn bản được chia thành ${chunks.length} phần.`, 'info');
                 
                 const currentTotalRemaining = validatedPool.reduce((total, entry) => total + (TTS_DAILY_API_LIMIT - entry.usage.count), 0);
 
@@ -143,34 +167,37 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                         }
                         
                         const keyToUse = transientPool[keyEntryIndex];
-                        setStatusMessage(`Đang xử lý phần ${i + 1}/${chunks.length} với key ...${keyToUse.key.slice(-4)}`);
+                        addLog(`Đang xử lý phần ${i + 1}/${chunks.length} với key ...${keyToUse.key.slice(-4)}`, 'info');
                         
                         try {
                             const { base64Audio } = await generateSpeech(keyToUse.key, chunk, selectedVoice === 'auto' ? undefined : selectedVoice);
                             audioBlobs.push(createWavBlob(decode(base64Audio)));
+                             addLog(`Xử lý thành công phần ${i + 1}.`, 'success');
                             
                             transientPool[keyEntryIndex].usage.count++;
                             setProgress(((i + 1) / chunks.length) * 100);
                             chunkProcessed = true; // Success, move to next chunk
                         } catch (e) {
+                            const errorMessage = e instanceof Error ? e.message : String(e);
                             console.error(`Key ...${keyToUse.key.slice(-4)} failed:`, e);
                             failedKeys.add(`...${keyToUse.key.slice(-4)}`);
                             
                             // Mark the key as fully used for this session to skip it next time
                             transientPool[keyEntryIndex].usage.count = TTS_DAILY_API_LIMIT;
+                            addLog(`Key ...${keyToUse.key.slice(-4)} lỗi: "${errorMessage.substring(0, 100)}". Đang thử key tiếp theo.`, 'error');
                             onSetNotification({ type: 'error', message: `Key ...${keyToUse.key.slice(-4)} lỗi. Đang thử key tiếp theo.` });
-                            setStatusMessage(`Key ...${keyToUse.key.slice(-4)} lỗi. Đang thử key tiếp theo...`);
                             
                             // Brief pause to allow notification to be seen
-                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            await new Promise(resolve => setTimeout(resolve, 500));
                         }
                     }
                 }
                 
-                setStatusMessage('Đang ghép các file âm thanh...');
+                addLog('Đang ghép các file âm thanh...', 'system');
                 const finalBlob = await stitchWavBlobs(audioBlobs);
                 setAudioBlob(finalBlob);
                 setApiKeyPool(transientPool);
+                addLog('Âm thanh đã sẵn sàng!', 'success');
 
                 let successMessage = 'Tổng hợp giọng nói thành công!';
                 if (failedKeys.size > 0) {
@@ -184,10 +211,10 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Đã xảy ra lỗi không xác định.';
             setError(errorMessage);
+            addLog(`Thất bại: ${errorMessage}`, 'error');
             onSetNotification({ type: 'error', message: errorMessage });
         } finally {
             setIsLoading(false);
-            setStatusMessage('');
         }
     }, [text, apiKeyPool, setApiKeyPool, selectedVoice, isOverCharacterLimit, characterLimit, user.tier, onSetNotification, isManagedUser]);
     
@@ -350,15 +377,15 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                 </button>
             </div>
             
-            {(isLoading || audioBlob || error) && (
-                <div className="p-6 bg-gray-800/50 border border-gray-700 rounded-lg">
-                    <h3 className="text-lg font-semibold mb-4 text-gray-300">Kết quả</h3>
+            {(isLoading || audioBlob || error || logs.length > 0) && (
+                <div className="p-6 bg-gray-800/50 border border-gray-700 rounded-lg space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-300">Kết quả & Nhật ký</h3>
                     {isLoading && (
                         <div className="space-y-3">
                             <div className="w-full bg-gray-700 rounded-full h-2.5">
                                 <div className="bg-purple-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
                             </div>
-                            <p className="text-sm text-center text-purple-300">{statusMessage}</p>
+                            <p className="text-sm text-center text-purple-300">{logs[logs.length - 1]?.message || ''}</p>
                         </div>
                     )}
                     {error && !isLoading && (
@@ -383,6 +410,20 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                                     <DownloadIcon />
                                     Tải xuống (.wav)
                                 </button>
+                            </div>
+                        </div>
+                    )}
+                     {logs.length > 0 && !isLoading && (
+                        <div className="bg-gray-900/70 border border-gray-700 rounded-md p-3 max-h-48 overflow-y-auto">
+                            <h4 className="text-md font-semibold mb-2 text-gray-400">Nhật ký xử lý</h4>
+                            <div className="text-xs font-mono space-y-1.5">
+                                {logs.map((log) => (
+                                    <div key={log.id} className={`flex items-start ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-green-400' : 'text-gray-400'}`}>
+                                        <LogIcon type={log.type} />
+                                        <span className="text-gray-500 mr-2 flex-shrink-0">[{log.timestamp}]</span>
+                                        <span className="flex-grow break-words">{log.message}</span>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}

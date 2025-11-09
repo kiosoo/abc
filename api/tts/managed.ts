@@ -57,12 +57,10 @@ export default apiHandler({
 
         // --- Start of new persistent quota logic ---
         const todayQuotaStr = getQuotaDayString();
-        let hasChanges = false;
         
         // 1. Validate and reset daily quotas for the key pool
         const keyPool: ManagedApiKeyEntry[] = (user.managedApiKeys || []).map(entry => {
             if (entry.usage.date !== todayQuotaStr) {
-                hasChanges = true; // Mark that we need to save this reset
                 return {
                     ...entry,
                     usage: { count: 0, date: todayQuotaStr }
@@ -85,42 +83,37 @@ export default apiHandler({
             for (const chunk of chunks) {
                 let chunkProcessed = false;
                 let lastError: Error | null = null;
-                
-                // Find the first available key
-                const keyEntryIndex = transientPool.findIndex((entry: ManagedApiKeyEntry) => entry.usage.count < TTS_DAILY_API_LIMIT);
-                
-                if (keyEntryIndex === -1) {
-                    throw new Error("Tất cả các API key có sẵn đều đã hết hạn ngạch cho hôm nay.");
-                }
 
-                // Try available keys in order until one succeeds or all fail
-                for (let i = keyEntryIndex; i < transientPool.length; i++) {
-                    const keyEntry = transientPool[i];
-
-                    if (keyEntry.usage.count >= TTS_DAILY_API_LIMIT) {
-                        continue; // Skip already exhausted keys
+                while (!chunkProcessed) {
+                    // Find the next available key in the pool for this attempt
+                    const keyEntryIndex = transientPool.findIndex((entry: ManagedApiKeyEntry) => entry.usage.count < TTS_DAILY_API_LIMIT);
+                    
+                    // If no keys have any quota left, we must fail.
+                    if (keyEntryIndex === -1) {
+                        const finalErrorMessage = lastError ? lastError.message : "Đã hết hạn ngạch trên tất cả các key hợp lệ.";
+                        throw new Error(`Không thể xử lý yêu cầu. Lỗi cuối cùng: ${finalErrorMessage}`);
                     }
                     
+                    const keyToUse = transientPool[keyEntryIndex];
+                    
                     try {
-                        const { base64Audio } = await generateSpeech(keyEntry.key, chunk, voice);
+                        // Attempt to generate speech with the selected key
+                        const { base64Audio } = await generateSpeech(keyToUse.key, chunk, voice);
                         pcmChunks.push(decode(base64Audio));
-                        keyEntry.usage.count++; // Increment usage on success
+                        
+                        // On success, increment the key's usage count and mark chunk as processed
+                        transientPool[keyEntryIndex].usage.count++;
                         chunkProcessed = true;
-                        break; // Success, move to the next chunk
                     } catch (error) {
                         lastError = error as Error;
-                        console.warn(`Key ...${keyEntry.key.slice(-4)} failed: ${lastError.message}`);
-                        if (error instanceof GeminiApiError && error.isQuotaError) {
-                            keyEntry.usage.count = TTS_DAILY_API_LIMIT; // Mark as exhausted for the day
-                        }
+                        console.warn(`Key ...${keyToUse.key.slice(-4)} failed: ${lastError.message}`);
+                        
+                        // On any failure, mark the key as exhausted for this request to prevent retries with a failing key.
+                        transientPool[keyEntryIndex].usage.count = TTS_DAILY_API_LIMIT;
                     }
                 }
-                
-                if (!chunkProcessed) {
-                     const finalErrorMessage = lastError ? lastError.message : "Tất cả các API key có sẵn đều không thành công.";
-                    throw new Error(`Không thể xử lý một phần văn bản. Lỗi cuối cùng: ${finalErrorMessage}`);
-                }
             }
+
 
             const combinedPcm = stitchPcmChunks(pcmChunks);
             const finalWavBuffer = createWavBuffer(combinedPcm);
