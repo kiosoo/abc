@@ -38,9 +38,9 @@ const tierDetails = {
             'Hỗ trợ ưu tiên'
         ],
         style: {
-            bg: 'bg-gray-800',
-            border: 'border-gray-700',
-            button: 'bg-blue-600 hover:bg-blue-700'
+            bg: 'bg-cyan-900/50',
+            border: 'border-cyan-500',
+            button: 'bg-cyan-600 hover:bg-cyan-700'
         }
     },
     [SubscriptionTier.ULTRA]: {
@@ -55,9 +55,9 @@ const tierDetails = {
             'Truy cập sớm các tính năng mới',
         ],
         style: {
-            bg: 'bg-gray-800',
-            border: 'border-gray-700',
-            button: 'bg-purple-600 hover:bg-purple-700'
+            bg: 'bg-teal-900/50',
+            border: 'border-teal-500',
+            button: 'bg-teal-600 hover:bg-teal-700'
         }
     },
     [SubscriptionTier.STAR]: {
@@ -126,34 +126,34 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
         const isCurrentUserTier = userTier === tier;
 
         return (
-            <div className={`flex flex-col rounded-lg p-6 border-2 ${details.style.border} ${details.style.bg} relative`}>
+            <div className={`flex flex-col rounded-lg p-3 border-2 ${details.style.border} ${details.style.bg} relative`}>
                  {details.kind === 'managed' && (
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-purple-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 text-white shadow-lg">
                         <StarIcon className="w-4 h-4" />
                         API Được Quản Lý
                     </div>
                 )}
-                <h3 className="text-2xl font-bold text-white text-center">{details.name}</h3>
-                <p className="text-center text-gray-400 mt-1 h-12">{details.description}</p>
+                <h3 className="text-lg font-bold text-white text-center">{details.name}</h3>
+                <p className="text-center text-gray-400 mt-1 h-9 text-xs">{details.description}</p>
 
-                <div className="my-6 text-center">
+                <div className="my-3 text-center">
                     {details.kind === 'managed' ? (
                         <>
-                            <span className="text-4xl font-extrabold text-white">{details.limitText}</span>
-                            <span className="block text-lg font-medium text-gray-400">{details.subtext}</span>
+                            <span className="text-2xl font-extrabold text-white">{details.limitText}</span>
+                            <span className="block text-sm font-medium text-gray-400">{details.subtext}</span>
                         </>
                     ) : (
                          <>
-                            <span className="text-4xl font-extrabold text-white">{details.limit === Infinity ? 'Vô hạn' : details.limit.toLocaleString()}</span>
-                            <span className="block text-lg font-medium text-gray-400"> ký tự / lần nhập</span>
+                            <span className="text-2xl font-extrabold text-white">{details.limit === Infinity ? 'Vô hạn' : details.limit.toLocaleString()}</span>
+                            <span className="block text-sm font-medium text-gray-400"> ký tự / lần nhập</span>
                         </>
                     )}
                 </div>
 
-                <ul className="space-y-3 text-gray-300 flex-grow">
+                <ul className="space-y-1.5 text-gray-300 flex-grow text-xs">
                     {details.features.map((feature, index) => (
                         <li key={index} className="flex items-start">
-                            <CheckIcon className="w-5 h-5 text-green-400 mr-2 flex-shrink-0 mt-0.5" />
+                            <CheckIcon className="w-4 h-4 text-green-400 mr-2 flex-shrink-0 mt-0.5" />
                             <span>{feature}</span>
                         </li>
                     ))}
@@ -162,7 +162,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                 {isCurrentUserTier ? (
                     <button
                         disabled
-                        className={`w-full mt-8 py-3 px-4 rounded-lg font-semibold text-white transition-colors ${details.style.button}`}
+                        className={`w-full mt-4 py-1.5 px-4 rounded-md font-semibold text-white text-sm transition-colors ${details.style.button}`}
                     >
                         Gói Hiện Tại
                     </button>
@@ -171,7 +171,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                         href="https://zalo.me/0985351304"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`block text-center w-full mt-8 py-3 px-4 rounded-lg font-semibold text-white transition-colors ${details.style.button}`}
+                        className={`block text-center w-full mt-4 py-1.5 px-4 rounded-md font-semibold text-white text-sm transition-colors ${details.style.button}`}
                     >
                         Liên hệ Nâng cấp
                     </a>
@@ -182,7 +182,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
 
     return (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-7xl relative animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-7xl relative animate-fade-in flex flex-col" onClick={e => e.stopPropagation()}>
                 <style>{`
                     @keyframes fade-in {
                         from { opacity: 0; transform: scale(0.95); }
@@ -190,13 +190,13 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                     }
                     .animate-fade-in { animation: fade-in 0.2s ease-out forwards; }
                 `}</style>
-                <div className="p-6 text-center border-b border-gray-700">
+                <div className="p-6 text-center border-b border-gray-700 flex-shrink-0">
                     <h2 className="text-3xl font-bold text-white">Các Gói Dịch Vụ</h2>
                     <p className="text-gray-400 mt-2">Chọn gói phù hợp nhất với nhu cầu sử dụng của bạn.</p>
                 </div>
 
-                <div className="p-8">
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                <div className="p-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         <PlanCard tier={SubscriptionTier.BASIC} />
                         <PlanCard tier={SubscriptionTier.PRO} />
                         <PlanCard tier={SubscriptionTier.ULTRA} />
@@ -225,7 +225,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                         </ul>
                     </div>
                 </div>
-                 <div className="p-4 bg-gray-900/50 text-right rounded-b-xl border-t border-gray-700">
+                 <div className="p-4 bg-gray-900/50 text-right rounded-b-xl border-t border-gray-700 flex-shrink-0">
                     <button onClick={onClose} className="px-5 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600 text-sm font-medium">Đóng</button>
                 </div>
             </div>

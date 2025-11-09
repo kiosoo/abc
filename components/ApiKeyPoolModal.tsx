@@ -24,7 +24,11 @@ const ApiKeyPoolModal: React.FC<ApiKeyPoolModalProps> = ({ onClose, onSetNotific
             return;
         }
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        // Use the same quota day logic as in validation
+        const now = new Date();
+        now.setUTCHours(now.getUTCHours() - 8);
+        const quotaDayStr = now.toISOString().split('T')[0];
+
         const currentKeyStrings = new Set(apiKeyPool.map(entry => entry.key));
         let addedCount = 0;
 
@@ -34,7 +38,7 @@ const ApiKeyPoolModal: React.FC<ApiKeyPoolModalProps> = ({ onClose, onSetNotific
             if (!currentKeyStrings.has(key)) {
                 updatedPool.push({
                     key: key,
-                    usage: { count: 0, date: todayStr }
+                    usage: { count: 0, date: quotaDayStr }
                 });
                 addedCount++;
             }
@@ -64,7 +68,7 @@ const ApiKeyPoolModal: React.FC<ApiKeyPoolModalProps> = ({ onClose, onSetNotific
                         Thêm nhiều Gemini API key để tăng giới hạn sử dụng hàng ngày của bạn.
                     </p>
                     <p className="text-xs text-gray-500 mt-2">
-                        Lưu ý: Hạn ngạch sử dụng của mỗi key sẽ được reset hàng ngày vào lúc 00:00 UTC (tức 7:00 sáng giờ Việt Nam).
+                        Lưu ý: Hạn ngạch sử dụng của mỗi key sẽ được reset hàng ngày vào khoảng 15:00 giờ Việt Nam (08:00 UTC).
                     </p>
                 </div>
                 

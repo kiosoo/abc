@@ -11,7 +11,12 @@ export const getValidatedApiKeyPool = (pool: ApiKeyEntry[]): ApiKeyEntry[] => {
         return [];
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    // The quota day resets at approximately 15:00 Vietnam time (UTC+7), which is 08:00 UTC.
+    // We adjust the current time by subtracting 8 hours to get the correct "quota day".
+    const now = new Date();
+    now.setUTCHours(now.getUTCHours() - 8);
+    const quotaDayStr = now.toISOString().split('T')[0];
+
 
     return pool.map(entry => {
         // Basic validation for entry structure
@@ -19,13 +24,13 @@ export const getValidatedApiKeyPool = (pool: ApiKeyEntry[]): ApiKeyEntry[] => {
             return null;
         }
 
-        if (entry.usage.date !== todayStr) {
-            // It's a new day, reset the count.
+        if (entry.usage.date !== quotaDayStr) {
+            // It's a new quota day, reset the count.
             return {
                 ...entry,
                 usage: {
                     count: 0,
-                    date: todayStr,
+                    date: quotaDayStr,
                 },
             };
         }
