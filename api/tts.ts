@@ -80,53 +80,44 @@ async function handleProcessSingleChunk(req, res, session) {
             res.status(404).json({ message: `Không tìm thấy văn bản chunk` });
             return;
         }
-        const todayQuotaStr = getQuotaDayString();
-        let keyPool = (user.managedApiKeys || []).map(entry => {
-            if (entry.usage.date !== todayQuotaStr) {
-                return { ...entry, usage: { count: 0, date: todayQuotaStr } };
-            }
-            return entry;
-        });
         
+        const keyPool = user.managedApiKeys;
         if (keyPool.length === 0) {
             res.status(500).json({ message: 'Không có API key nào được cấu hình cho người dùng này.' });
             return;
         }
 
+        const todayQuotaStr = getQuotaDayString();
+        const usageKey = `keyusage:${user.id}:${todayQuotaStr}`;
+
         let audioBase64 = null;
         let success = false;
         let errorMsg = 'Hết hạn ngạch trên tất cả các key hoặc đã xảy ra lỗi.';
         
-        // Smarter key selection for parallel processing:
-        // Start checking from an index based on the chunk number to distribute load.
         const startIndex = chunkIndex % keyPool.length;
         
         for (let i = 0; i < keyPool.length; i++) {
             const keyIndex = (startIndex + i) % keyPool.length;
             const keyEntry = keyPool[keyIndex];
 
-            if (keyEntry.usage.count < TTS_DAILY_API_LIMIT) {
+            const currentUsage = (await kv.hget(usageKey, keyEntry.key)) || 0;
+
+            if ((currentUsage as number) < TTS_DAILY_API_LIMIT) {
                 try {
                     const result = await generateSpeech(keyEntry.key, chunkText as string, jobData.voice as string);
                     audioBase64 = result.base64Audio;
-                    keyPool[keyIndex].usage.count++; // Increment usage
+                    await kv.hincrby(usageKey, keyEntry.key, 1);
                     success = true;
-                    break; // Found a working key, exit the loop
+                    break; 
                 } catch (e) {
                     if (e instanceof GeminiApiError && e.isQuotaError) {
-                        keyPool[keyIndex].usage.count = TTS_DAILY_API_LIMIT; // Mark as exhausted for today
+                        await kv.hset(usageKey, { [keyEntry.key]: TTS_DAILY_API_LIMIT });
                     }
                     errorMsg = e instanceof Error ? e.message : String(e);
                     console.error(`Key ...${keyEntry.key.slice(-4)} failed for job ${jobId}, chunk ${chunkIndex}: ${errorMsg}`);
-                    // Don't break; continue to try the next key
                 }
             }
         }
-
-        // Update the user's key usage state in the database.
-        // NOTE: In a highly concurrent scenario, this read-modify-write operation
-        // could have a race condition. For this app's scale, the risk is acceptable.
-        await updateUser(user.id, { managedApiKeys: keyPool });
         
         if (success && audioBase64) {
              // Return the audio directly to the client

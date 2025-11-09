@@ -33,6 +33,11 @@ function getKv(): VercelKV {
     }
 }
 
+const getQuotaDayString = () => {
+    const now = new Date();
+    now.setUTCHours(now.getUTCHours() - 8);
+    return now.toISOString().split('T')[0];
+};
 
 // Helper to correctly parse a user object from KV's string-only hash values
 const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
@@ -50,6 +55,7 @@ const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
 
         let parsedManagedApiKeys: ManagedApiKeyEntry[] = [];
         const rawKeys = rawUser.managedApiKeys;
+        const quotaDayStr = getQuotaDayString();
         
         if (typeof rawKeys === 'string') {
             try {
@@ -57,15 +63,17 @@ const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
                 if (Array.isArray(parsed)) {
                     // Check if it's the old format (string[]) or new format (ManagedApiKeyEntry[])
                     if (parsed.length > 0 && typeof parsed[0] === 'string') {
-                        // Old format: Convert string[] to ManagedApiKeyEntry[]
-                        const quotaDayStr = new Date().toISOString().split('T')[0];
+                        // Old format: Convert string[] to ManagedApiKeyEntry[], initialize usage
                         parsedManagedApiKeys = parsed.map(key => ({
                             key,
                             usage: { count: 0, date: quotaDayStr }
                         }));
                     } else if (parsed.length > 0 && typeof parsed[0] === 'object') {
-                        // New format, just validate it
-                        parsedManagedApiKeys = parsed.filter(item => typeof item.key === 'string' && typeof item.usage === 'object');
+                        // New format, initialize usage for display. Actual usage is fetched separately.
+                        parsedManagedApiKeys = parsed.filter(item => typeof item.key === 'string').map(item => ({
+                            ...item,
+                            usage: { count: 0, date: quotaDayStr }
+                        }));
                     }
                 }
             } catch (e) {
@@ -74,7 +82,10 @@ const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
         } else if (Array.isArray(rawKeys)) {
             // Handle case where @vercel/kv might have auto-parsed the JSON string.
              if (rawKeys.length > 0 && typeof rawKeys[0] === 'object') {
-                parsedManagedApiKeys = rawKeys.filter(item => typeof item.key === 'string' && typeof item.usage === 'object');
+                parsedManagedApiKeys = rawKeys.filter(item => typeof item.key === 'string').map(item => ({
+                    ...item,
+                    usage: { count: 0, date: quotaDayStr }
+                }));
              }
         }
 
@@ -186,14 +197,46 @@ export async function getAllUsers(): Promise<Omit<User, 'password'>[]> {
     const userIds = await kv.smembers('users');
     if (!userIds || userIds.length === 0) return [];
 
-    const pipeline = kv.pipeline();
-    userIds.forEach(id => pipeline.hgetall(`user:${id}`));
-    const rawUsers = await pipeline.exec<Record<string, unknown>[]>();
+    const userPipeline = kv.pipeline();
+    userIds.forEach(id => userPipeline.hgetall(`user:${id}`));
+    const rawUsers = await userPipeline.exec<Record<string, unknown>[]>();
 
-    return rawUsers
+    const users = rawUsers
         .map(rawUser => parseUserFromKv(rawUser))
-        .filter((u): u is User => u !== null)
-        .map(({ password, ...user }) => user);
+        .filter((u): u is User => u !== null);
+
+    // --- Fetch managed key usage in a second pipeline for efficiency ---
+    const todayQuotaStr = getQuotaDayString();
+    const usagePipeline = kv.pipeline();
+    const usersWithManagedKeys: number[] = []; // Store indices of users to update
+
+    users.forEach((user, index) => {
+        if (user.managedApiKeys && user.managedApiKeys.length > 0) {
+            usagePipeline.hgetall(`keyusage:${user.id}:${todayQuotaStr}`);
+            usersWithManagedKeys.push(index);
+        }
+    });
+
+    if (usersWithManagedKeys.length > 0) {
+        const usageData = await usagePipeline.exec<Record<string, number>[]>();
+        
+        usersWithManagedKeys.forEach((userIndex, i) => {
+            const user = users[userIndex];
+            const keyUsages = usageData[i] || {};
+            
+            if (user.managedApiKeys) {
+                user.managedApiKeys = user.managedApiKeys.map(keyEntry => ({
+                    ...keyEntry,
+                    usage: {
+                        count: keyUsages[keyEntry.key] || 0,
+                        date: todayQuotaStr
+                    }
+                }));
+            }
+        });
+    }
+
+    return users.map(({ password, ...user }) => user);
 }
 
 export async function updateUser(id: string, updates: Partial<Omit<User, 'id' | 'password'>> & { managedApiKeys?: string[] | ManagedApiKeyEntry[] }): Promise<Omit<User, 'password'> | null> {
@@ -209,7 +252,6 @@ export async function updateUser(id: string, updates: Partial<Omit<User, 'id' | 
     
     const updatesForKv: { [key: string]: any } = {};
 
-    // Process all updates except for managedApiKeys, which needs special handling
     for (const key in updates) {
         if (key !== 'managedApiKeys' && Object.prototype.hasOwnProperty.call(updates, key)) {
             const value = updates[key as keyof typeof updates];
@@ -226,32 +268,12 @@ export async function updateUser(id: string, updates: Partial<Omit<User, 'id' | 
             }
         }
     }
-
-    // FIX: Smarter handling of managedApiKeys
+    
     if (updates.managedApiKeys) {
-        const newKeyList = updates.managedApiKeys;
-        
-        // If the incoming array contains full ManagedApiKeyEntry objects (from TTS service),
-        // trust it and use it directly.
-        if (newKeyList.length > 0 && typeof newKeyList[0] === 'object') {
-            updatesForKv.managedApiKeys = JSON.stringify(newKeyList);
-        } 
-        // Otherwise, assume it's an array of strings (from Admin UI) and perform the merge.
-        else {
-            const oldKeysMap = new Map((currentUser.managedApiKeys || []).map(entry => [entry.key, entry.usage]));
-            const quotaDayStr = new Date().toISOString().split('T')[0];
-
-            const newManagedApiEntries: ManagedApiKeyEntry[] = (newKeyList as string[]).map(key => {
-                const existingUsage = oldKeysMap.get(key);
-                
-                if (existingUsage) {
-                    return { key, usage: existingUsage };
-                } else {
-                    return { key, usage: { count: 0, date: quotaDayStr } };
-                }
-            });
-            updatesForKv.managedApiKeys = JSON.stringify(newManagedApiEntries);
-        }
+        // The list from the admin panel is the source of truth.
+        // We just store the key, not the usage data, on the user object.
+        const newManagedApiEntries = (updates.managedApiKeys as string[]).map(key => ({ key }));
+        updatesForKv.managedApiKeys = JSON.stringify(newManagedApiEntries);
     }
     
     if (Object.keys(updatesForKv).length > 0) {

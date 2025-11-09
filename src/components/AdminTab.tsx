@@ -139,18 +139,25 @@ const UserDetailsModal: React.FC<{
         setTier(user.tier);
         setExpiresAt(formatDateForInput(user.subscriptionExpiresAt));
         setManagedKeys((user.managedApiKeys?.map(entry => entry.key) || []).join('\n'));
-        const shouldEdit = isManagedTier && (!user.managedApiKeys || user.managedApiKeys.length === 0);
+        const initialIsManaged = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(user.tier);
+        const shouldEdit = initialIsManaged && (!user.managedApiKeys || user.managedApiKeys.length === 0);
         setIsEditingKeys(shouldEdit);
-    }, [user, isManagedTier]);
+    }, [user]);
 
     useEffect(() => {
         if (tier === SubscriptionTier.BASIC) {
             setExpiresAt('');
-        } else if (user.tier === SubscriptionTier.BASIC) {
+        } else if (user.tier === SubscriptionTier.BASIC && tier !== user.tier) {
             const defaultExpiresAt = new Date();
             defaultExpiresAt.setMonth(defaultExpiresAt.getMonth() + 1);
             setExpiresAt(formatDateForInput(defaultExpiresAt.toISOString()));
         }
+        
+        const newTierIsManaged = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(tier);
+        if (newTierIsManaged && managedKeys.trim() === '') {
+            setIsEditingKeys(true);
+        }
+
     }, [tier, user.tier]);
 
     const handleCancelEditKeys = () => {
@@ -249,7 +256,12 @@ const UserDetailsModal: React.FC<{
                     {isManagedTier && (
                         <div>
                             <div className="flex justify-between items-center mb-2">
-                                <h4 className="text-sm font-medium text-gray-400">API Keys được Quản lý ({user.managedApiKeys?.length || 0})</h4>
+                                <h4 className="text-sm font-medium text-gray-400">
+                                    API Keys được Quản lý ({user.managedApiKeys?.length || 0})
+                                    {isManagedTier && managedKeys.trim() === '' && (
+                                        <span className="text-yellow-400 ml-2 font-semibold text-xs">(Cần thêm key cho gói này)</span>
+                                    )}
+                                </h4>
                                 {!isEditingKeys && (
                                      <button 
                                         onClick={() => setIsEditingKeys(true)} 
@@ -271,7 +283,7 @@ const UserDetailsModal: React.FC<{
                                         disabled={isSaving}
                                     />
                                     <div className="flex justify-between items-center">
-                                        <p className="text-xs text-gray-500 mt-1">Lưu sẽ hợp nhất danh sách, giữ lại dữ liệu sử dụng của các key cũ.</p>
+                                        <p className="text-xs text-gray-500 mt-1">Lưu sẽ thay thế hoàn toàn danh sách key cũ.</p>
                                         {(user.managedApiKeys && user.managedApiKeys.length > 0) && (
                                             <button 
                                                 onClick={handleCancelEditKeys} 

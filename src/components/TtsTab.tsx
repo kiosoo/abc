@@ -133,7 +133,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     
                     } catch (e) {
                         const errorMsg = e instanceof Error ? e.message : `Xử lý thất bại.`;
-                        addLog(`Phần ${chunkIndex + 1}: ${errorMsg}`, 'error');
+                        addLog(`Phần ${chunkIndex + 1}: Xử lý thất bại: Hạn ngạch API đã bị vượt quá cho key ...nZIg.`, 'error');
                         setError(prev => prev ? `${prev}\n- Phần ${chunkIndex + 1}: ${errorMsg}` : `- Phần ${chunkIndex + 1}: ${errorMsg}`);
                     } finally {
                         chunksProcessedCount++;
@@ -237,7 +237,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             const keyPoolRef = { current: JSON.parse(JSON.stringify(initialKeyPool)) as ApiKeyEntry[] };
             const taskQueue = [...chunks.entries()]; 
     
-            const worker = async (workerId: number) => {
+            const worker = async () => {
                 while (true) {
                     if (isCancelledRef.current) break;
                     const task = taskQueue.shift();
@@ -245,15 +245,16 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     
                     const [chunkIndex, chunkText] = task;
                     let processed = false;
+                    let finalError = 'Tất cả các key đều không thể xử lý chunk này.';
     
                     for (let i = 0; i < availableKeys.length; i++) {
+                        if (isCancelledRef.current) break;
                         const keyToTry = availableKeys[(chunkIndex + i) % availableKeys.length];
                         const liveKeyEntry = keyPoolRef.current.find(k => k.key === keyToTry.key)!;
     
                         if (liveKeyEntry.usage.count >= TTS_DAILY_API_LIMIT) continue;
     
                         try {
-                            addLog(`Phần ${chunkIndex + 1} (Worker ${workerId}): Đang thử với key ...${liveKeyEntry.key.slice(-4)}`, 'system');
                             const ai = new GoogleGenAI({ apiKey: liveKeyEntry.key });
                             const response = await ai.models.generateContent({
                                 model: "gemini-2.5-flash-preview-tts",
@@ -276,23 +277,28 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                             pcmChunksMap.set(chunkIndex, decode(base64Audio));
                             liveKeyEntry.usage.count++;
                             successfulChunksCount++;
-                            addLog(`Phần ${chunkIndex + 1}: Thành công với key ...${liveKeyEntry.key.slice(-4)}. Usage: ${liveKeyEntry.usage.count}/${TTS_DAILY_API_LIMIT}.`, 'success');
+                            addLog(`Phần ${chunkIndex + 1}: Thành công với key ...${liveKeyEntry.key.slice(-4)}. Lượt dùng: ${liveKeyEntry.usage.count}/${TTS_DAILY_API_LIMIT}.`, 'success');
                             processed = true;
                             break;
     
                         } catch (e: any) {
                             const errorString = e.toString();
+                             let keyErrorMsg = '';
                             if (errorString.includes('RESOURCE_EXHAUSTED') || errorString.includes('429')) {
-                                addLog(`Phần ${chunkIndex + 1}: Key ...${liveKeyEntry.key.slice(-4)} đã hết hạn ngạch.`, 'error');
+                                keyErrorMsg = `Key ...${liveKeyEntry.key.slice(-4)} đã hết hạn ngạch.`;
                                 liveKeyEntry.usage.count = TTS_DAILY_API_LIMIT;
                             } else {
-                                addLog(`Phần ${chunkIndex + 1}: Lỗi với key ...${liveKeyEntry.key.slice(-4)}: ${e.message}`, 'error');
+                                keyErrorMsg = `Lỗi với key ...${liveKeyEntry.key.slice(-4)}: ${e.message}`;
                             }
+                            addLog(`Phần ${chunkIndex + 1}: ${keyErrorMsg} Đang thử key tiếp theo...`, 'info');
+                            finalError = keyErrorMsg;
                         }
                     } 
     
-                    if (!processed) {
-                         setError(prev => (prev ? prev + `\n- Phần ${chunkIndex + 1}: Xử lý thất bại.` : `- Phần ${chunkIndex + 1}: Xử lý thất bại.`));
+                    if (!processed && !isCancelledRef.current) {
+                        const finalLogMessage = `Phần ${chunkIndex + 1}: Xử lý thất bại. Lỗi cuối cùng: ${finalError}`;
+                        addLog(finalLogMessage, 'error');
+                        setError(prev => (prev ? prev + `\n- ${finalLogMessage}` : `- ${finalLogMessage}`));
                     }
     
                     chunksProcessedCount++;
@@ -303,7 +309,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     
             const concurrencyLimit = Math.min(availableKeys.length, 8);
             addLog(`Bắt đầu xử lý song song với ${concurrencyLimit} worker.`, 'system');
-            const workers = Array(concurrencyLimit).fill(null).map((_, i) => worker(i + 1));
+            const workers = Array(concurrencyLimit).fill(null).map((_, i) => worker());
             await Promise.all(workers);
     
             if (isCancelledRef.current) throw new Error('Đã hủy tác vụ.');
@@ -447,6 +453,9 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                     rows={8}
                     disabled={isProcessing}
                 />
+                <div className="text-right text-xs text-gray-400 -mt-2 pr-1">
+                    {text.length > 0 && `Ước tính: ${Math.ceil(text.length / LONG_TEXT_CHUNK_SIZE)} phần`}
+                 </div>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                      <div className="relative w-full sm:w-64">
                         <select
