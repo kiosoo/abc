@@ -24,7 +24,7 @@ export default async function ttsHandler(req: VercelRequest, res: VercelResponse
 
         // Handle the 'auto' voice which is a UI-only value.
         // The API requires a specific voice name. 'Kore' is a good default.
-        const effectiveVoice = (voice && voice.toLowerCase() !== 'auto') ? voice : 'Kore';
+        const effectiveVoice = (voice && String(voice).toLowerCase() !== 'auto') ? voice : 'Kore';
 
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",

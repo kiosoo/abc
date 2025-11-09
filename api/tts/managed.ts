@@ -4,6 +4,7 @@ import { generateSpeech, GeminiApiError } from '../_lib/geminiService.js';
 import { decode, createWavBuffer, stitchPcmChunks } from '../_lib/audioUtils.js';
 import { LONG_TEXT_CHUNK_SIZE, TIER_LIMITS, TTS_DAILY_API_LIMIT } from '../../constants.js';
 import { ManagedApiKeyEntry } from '../_lib/types.js';
+import { smartSplit } from '../_lib/textUtils.js';
 
 // Helper to get the current "quota day" string.
 // Quota resets at 00:00 PST, which is 08:00 UTC. We adjust for this.
@@ -16,21 +17,18 @@ const getQuotaDayString = () => {
 export default apiHandler({
     POST: async (req, res, session) => {
         if (!session.id) {
-            // FIX: Add a void return to match the ApiHandler's expected `Promise<void>` signature.
             res.status(401).json({ message: 'Chưa được xác thực' });
             return;
         }
 
         const user = await findUserById(session.id);
         if (!user) {
-            // FIX: Add a void return.
             res.status(404).json({ message: 'Không tìm thấy người dùng' });
             return;
         }
         
         const { text, voice } = req.body;
         if (!text) {
-            // FIX: Add a void return.
             res.status(400).json({ message: 'Yêu cầu nhập văn bản' });
             return;
         }
@@ -43,14 +41,12 @@ export default apiHandler({
             const currentUsage = usageData.usageDate === todayStr ? usageData.ttsCharacters : 0;
             if (currentUsage + text.length > dailyLimit) {
                  const message = `Yêu cầu ${text.length.toLocaleString()} ký tự sẽ vượt quá giới hạn hàng ngày của bạn. (Đã dùng: ${currentUsage.toLocaleString()}/${dailyLimit.toLocaleString()})`;
-                // FIX: Add a void return.
                 res.status(403).json({ message });
                 return;
             }
         }
 
         if (!user.managedApiKeys || user.managedApiKeys.length === 0) {
-            // FIX: Add a void return.
             res.status(403).json({ message: 'Tài khoản của bạn chưa được cấu hình. Vui lòng liên hệ quản trị viên.' });
             return;
         }
@@ -73,10 +69,7 @@ export default apiHandler({
         const transientPool = JSON.parse(JSON.stringify(keyPool));
 
         try {
-            const chunks: string[] = [];
-            for (let i = 0; i < text.length; i += LONG_TEXT_CHUNK_SIZE) {
-                chunks.push(text.substring(i, i + LONG_TEXT_CHUNK_SIZE));
-            }
+            const chunks = smartSplit(text, LONG_TEXT_CHUNK_SIZE);
             
             const pcmChunks: Uint8Array[] = [];
             
@@ -125,7 +118,6 @@ export default apiHandler({
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Đã xảy ra lỗi không xác định khi tạo âm thanh.';
             console.error("Managed TTS Error:", message);
-            // FIX: Add a void return.
             res.status(500).json({ message });
             return;
         } finally {

@@ -7,6 +7,7 @@ import { getValidatedApiKeyPool } from '@/utils/apiKeyUtils';
 import { ChevronDownIcon, LoadingSpinner, DownloadIcon, ErrorIcon, DocumentTextIcon, SystemIcon, InfoIcon, SuccessIcon } from '@/components/Icons';
 import { reportTtsUsage, fetchProjects, saveProject, deleteProject, generateManagedSpeech } from '@/services/apiService';
 import SubscriptionModal from '@/components/SubscriptionModal';
+import { smartSplit } from '@/utils/textUtils';
 
 interface TtsTabProps {
     onSetNotification: (notification: Omit<Notification, 'id'>) => void;
@@ -36,12 +37,12 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     const [progress, setProgress] = useState(0);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+    const [audioUrl, setAudioUrl] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
     
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoadingProjects, setIsLoadingProjects] = useState(true);
 
-    const audioRef = useRef<HTMLAudioElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     const isManagedUser = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(user.tier);
@@ -84,9 +85,18 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     const isOverApiLimit = requiredChunks > totalRemainingCalls;
 
     useEffect(() => {
-        if (audioBlob && audioRef.current) {
-            audioRef.current.src = URL.createObjectURL(audioBlob);
+        if (audioBlob) {
+            const url = URL.createObjectURL(audioBlob);
+            setAudioUrl(url);
+    
+            // Return a cleanup function to revoke the URL when the component unmounts
+            // or when the audioBlob changes, preventing memory leaks.
+            return () => {
+                URL.revokeObjectURL(url);
+            };
         }
+        // If audioBlob becomes null, reset the URL. The old URL is revoked by the cleanup.
+        setAudioUrl('');
     }, [audioBlob]);
     
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,7 +129,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
         try {
             if (isManagedUser) {
                 // --- Managed User Flow ---
-                const chunksCount = Math.ceil(text.length / LONG_TEXT_CHUNK_SIZE);
+                const chunksCount = smartSplit(text, LONG_TEXT_CHUNK_SIZE).length;
                 addLog(`Đang gửi yêu cầu xử lý ${chunksCount.toLocaleString()} phần văn bản...`, 'info');
                 const finalBlob = await generateManagedSpeech(text, selectedVoice);
                 setAudioBlob(finalBlob);
@@ -139,11 +149,8 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                     throw new Error(`Bạn đã vượt quá giới hạn ${characterLimit.toLocaleString()} ký tự của gói ${user.tier}.`);
                 }
 
-                const chunks: string[] = [];
-                for (let i = 0; i < text.length; i += LONG_TEXT_CHUNK_SIZE) {
-                    chunks.push(text.substring(i, i + LONG_TEXT_CHUNK_SIZE));
-                }
-                addLog(`Văn bản được chia thành ${chunks.length} phần.`, 'info');
+                const chunks = smartSplit(text, LONG_TEXT_CHUNK_SIZE);
+                addLog(`Văn bản được chia thông minh thành ${chunks.length} phần.`, 'info');
                 
                 const currentTotalRemaining = validatedPool.reduce((total, entry) => total + (TTS_DAILY_API_LIMIT - entry.usage.count), 0);
 
@@ -399,7 +406,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                     )}
                     {audioBlob && !isLoading && (
                         <div className="space-y-4 p-3 bg-gray-900 rounded-lg">
-                            <audio ref={audioRef} controls className="w-full h-12">
+                            <audio src={audioUrl} controls className="w-full h-12">
                                 Trình duyệt của bạn không hỗ trợ phát âm thanh.
                             </audio>
                             <div className="flex items-center justify-end gap-2">
