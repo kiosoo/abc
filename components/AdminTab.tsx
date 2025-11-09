@@ -63,38 +63,11 @@ const DashboardMetrics: React.FC<{ users: Omit<User, 'password'>[] }> = ({ users
 
 interface UserRowProps {
     user: Omit<User, 'password'>;
-    onSave: (id: string, updates: Partial<User>) => void;
     onViewDetails: (user: Omit<User, 'password'>) => void;
     onDelete: (id: string, username: string) => void;
-    isSaving: boolean;
 }
 
-const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete, isSaving }) => {
-    const [tier, setTier] = useState(user.tier);
-    
-    const formatDateForInput = (isoDate: string | null) => {
-        if (!isoDate) return '';
-        try {
-            return new Date(isoDate).toISOString().split('T')[0];
-        } catch {
-            return '';
-        }
-    };
-
-    const [expiresAt, setExpiresAt] = useState(formatDateForInput(user.subscriptionExpiresAt));
-    
-    useEffect(() => {
-        setTier(user.tier);
-        setExpiresAt(formatDateForInput(user.subscriptionExpiresAt));
-    }, [user]);
-
-
-    const handleSave = () => {
-        const expiresAtValue = expiresAt ? new Date(expiresAt).toISOString() : null;
-        onSave(user.id, { tier, subscriptionExpiresAt: expiresAtValue });
-    };
-    
-    const isChanged = tier !== user.tier || expiresAt !== formatDateForInput(user.subscriptionExpiresAt);
+const UserRow: React.FC<UserRowProps> = ({ user, onViewDetails, onDelete }) => {
     const isExpired = user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) < new Date();
     const usernameColorClass = isExpired ? 'text-red-400 font-bold' : TIER_COLORS[user.tier];
 
@@ -102,23 +75,10 @@ const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete
         <tr className={`transition-colors ${isExpired ? 'bg-red-900/20 hover:bg-red-900/30' : 'hover:bg-gray-800/60'}`}>
             <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${usernameColorClass}`}>{user.username}</td>
             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                <select 
-                    value={tier} 
-                    onChange={e => setTier(e.target.value as SubscriptionTier)}
-                    className="bg-gray-700 border border-gray-600 rounded-md p-1"
-                    disabled={user.isAdmin || isSaving}
-                >
-                    {Object.values(SubscriptionTier).map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+                {user.tier}
             </td>
             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                <input
-                    type="date"
-                    value={expiresAt}
-                    onChange={(e) => setExpiresAt(e.target.value)}
-                    className="w-40 bg-gray-700 border border-gray-600 rounded-md p-1"
-                    disabled={user.isAdmin || isSaving}
-                />
+                {user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt).toLocaleDateString('vi-VN', { timeZone: 'UTC' }) : 'N/A'}
             </td>
             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono">{user.usage.ttsCharacters.toLocaleString()}</td>
             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{timeAgo(user.lastLoginAt)}</td>
@@ -128,13 +88,6 @@ const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete
                     className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                     Chi tiết
-                </button>
-                <button
-                    onClick={handleSave}
-                    disabled={!isChanged || isSaving}
-                    className="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed min-w-[50px] flex justify-center items-center"
-                >
-                    {isSaving ? <LoadingSpinner className="h-4 w-4" /> : 'Lưu'}
                 </button>
                 {!user.isAdmin && (
                     <button
@@ -149,30 +102,53 @@ const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete
     );
 };
 
+const formatDateForInput = (isoDate: string | null) => {
+    if (!isoDate) return '';
+    try {
+        return new Date(isoDate).toISOString().split('T')[0];
+    } catch {
+        return '';
+    }
+};
+
 const UserDetailsModal: React.FC<{ 
     user: Omit<User, 'password'>;
     onClose: () => void;
     onSave: (id: string, updates: Partial<User>) => Promise<void>;
-}> = ({ user, onClose, onSave }) => {
-    const limit = TIER_LIMITS[user.tier];
-    const usagePercentage = limit === Infinity ? 0 : Math.min((user.usage.ttsCharacters / limit) * 100, 100);
-    const [isLoading, setIsLoading] = useState(false);
-    
+    isSaving: boolean;
+}> = ({ user, onClose, onSave, isSaving }) => {
+    const [tier, setTier] = useState(user.tier);
+    const [expiresAt, setExpiresAt] = useState(formatDateForInput(user.subscriptionExpiresAt));
     const [managedKeys, setManagedKeys] = useState((user.managedApiKeys || []).join('\n'));
 
     useEffect(() => {
+        setTier(user.tier);
+        setExpiresAt(formatDateForInput(user.subscriptionExpiresAt));
         setManagedKeys((user.managedApiKeys || []).join('\n'));
-    }, [user.managedApiKeys]);
+    }, [user]);
 
-    const isManagedTier = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(user.tier);
+    const isManagedTier = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(tier);
+    
+    const limit = TIER_LIMITS[tier];
+    const usagePercentage = limit === Infinity ? 0 : Math.min((user.usage.ttsCharacters / limit) * 100, 100);
+    
+    const isChanged = tier !== user.tier ||
+                      expiresAt !== formatDateForInput(user.subscriptionExpiresAt) ||
+                      managedKeys !== (user.managedApiKeys || []).join('\n');
 
     const handleSaveChanges = async () => {
-        setIsLoading(true);
-        try {
-            const keys = managedKeys.split('\n').map(k => k.trim()).filter(Boolean);
-            await onSave(user.id, { managedApiKeys: keys });
-        } finally {
-            setIsLoading(false);
+        const updates: Partial<User> = {};
+        
+        if (tier !== user.tier) updates.tier = tier;
+        if (expiresAt !== formatDateForInput(user.subscriptionExpiresAt)) {
+            updates.subscriptionExpiresAt = expiresAt ? new Date(expiresAt).toISOString() : null;
+        }
+        if (managedKeys !== (user.managedApiKeys || []).join('\n')) {
+            updates.managedApiKeys = managedKeys.split('\n').map(k => k.trim()).filter(Boolean);
+        }
+
+        if (Object.keys(updates).length > 0) {
+            await onSave(user.id, updates);
         }
     };
 
@@ -187,8 +163,27 @@ const UserDetailsModal: React.FC<{
                     <div>
                         <h4 className="text-sm font-medium text-gray-400 mb-2">Thông tin Gói</h4>
                         <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-500">Gói:</span> <span className={`font-semibold ${TIER_COLORS[user.tier]}`}>{user.tier}</span></div>
-                            <div><span className="text-gray-500">Hết hạn:</span> <span className="text-white font-semibold">{user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt).toLocaleDateString('vi-VN') : 'Không bao giờ'}</span></div>
+                            <div className="space-y-1">
+                                <label className="text-gray-500 text-xs">Gói:</label>
+                                <select 
+                                    value={tier} 
+                                    onChange={e => setTier(e.target.value as SubscriptionTier)}
+                                    className={`w-full bg-gray-700 border border-gray-600 rounded-md p-1 font-semibold ${TIER_COLORS[tier]}`}
+                                    disabled={user.isAdmin || isSaving}
+                                >
+                                    {Object.values(SubscriptionTier).map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-gray-500 text-xs">Hết hạn:</label>
+                                <input
+                                    type="date"
+                                    value={expiresAt}
+                                    onChange={(e) => setExpiresAt(e.target.value)}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded-md p-1 text-white"
+                                    disabled={user.isAdmin || isSaving}
+                                />
+                            </div>
                         </div>
                     </div>
                      <div>
@@ -205,7 +200,7 @@ const UserDetailsModal: React.FC<{
                             <div className="flex justify-between text-sm font-medium">
                                 <span className="text-purple-300">{user.usage.ttsCharacters.toLocaleString()}</span>
                                 <span className="text-gray-400">
-                                    <span className={`font-semibold ${TIER_COLORS[user.tier]}`}>{user.tier}</span>
+                                    <span className={`font-semibold ${TIER_COLORS[tier]}`}>{tier}</span>
                                     {limit === Infinity ? ' / Vô hạn' : ` / ${limit.toLocaleString()} ký tự`}
                                 </span>
                             </div>
@@ -219,27 +214,13 @@ const UserDetailsModal: React.FC<{
                         <div>
                             <h4 className="text-sm font-medium text-gray-400 mb-2">API Keys được Quản lý</h4>
                             
-                            <div className="mb-3 p-3 bg-gray-900 rounded-md border border-gray-700">
-                                <h5 className="text-xs font-semibold text-gray-300 mb-2">Các Keys đang hoạt động ({user.managedApiKeys?.length || 0}):</h5>
-                                {user.managedApiKeys && user.managedApiKeys.length > 0 ? (
-                                    <ul className="space-y-1">
-                                        {user.managedApiKeys.map((key, index) => (
-                                            <li key={index} className="font-mono text-xs text-cyan-400 bg-gray-800/50 px-2 py-1 rounded-sm">
-                                                {key.length > 6 ? `${key.substring(0, 2)}...${key.slice(-4)}` : key}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="text-xs text-gray-500">Chưa có key nào được gán.</p>
-                                )}
-                            </div>
-
                             <textarea
                                 value={managedKeys}
                                 onChange={(e) => setManagedKeys(e.target.value)}
                                 placeholder="Dán các API key vào đây để cập nhật hoặc thêm mới, mỗi key một dòng."
                                 className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 resize-y focus:ring-2 focus:ring-purple-500 font-mono text-sm"
                                 rows={4}
+                                disabled={isSaving}
                             />
                              <p className="text-xs text-gray-500 mt-1">Lưu ý: Việc lưu sẽ ghi đè toàn bộ danh sách key hiện có bằng nội dung bên trên.</p>
                         </div>
@@ -247,16 +228,13 @@ const UserDetailsModal: React.FC<{
                 </div>
                 <div className="p-4 bg-gray-900/50 flex justify-end gap-3 items-center rounded-b-lg">
                     <button onClick={onClose} className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500 text-sm">Đóng</button>
-                    {isManagedTier && (
-                        <button 
-                            onClick={handleSaveChanges} 
-                            disabled={isLoading}
-                            className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm flex items-center gap-2 disabled:bg-gray-500"
-                        >
-                            {isLoading && <LoadingSpinner className="h-4 w-4" />}
-                            Lưu API Keys
-                        </button>
-                    )}
+                    <button 
+                        onClick={handleSaveChanges} 
+                        disabled={isSaving || !isChanged}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm flex items-center gap-2 disabled:bg-gray-500 min-w-[120px] justify-center"
+                    >
+                        {isSaving ? <LoadingSpinner className="h-4 w-4" /> : 'Lưu thay đổi'}
+                    </button>
                 </div>
             </div>
         </div>
@@ -271,7 +249,7 @@ interface AdminTabProps {
 const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
     const [users, setUsers] = useState<Omit<User, 'password'>[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [savingUserId, setSavingUserId] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
     const [tierFilter, setTierFilter] = useState<string>('all');
     const [usernameFilter, setUsernameFilter] = useState<string>('');
     const [sortColumn, setSortColumn] = useState<string>('username');
@@ -351,7 +329,7 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
     }, [users, tierFilter, usernameFilter, sortColumn, sortDirection]);
 
     const handleSaveUser = async (id: string, updates: Partial<User>) => {
-        setSavingUserId(id);
+        setIsSaving(true);
         try {
            const updatedUser = await updateUserSubscription(id, updates);
            onSetNotification({ type: 'success', message: 'Cập nhật người dùng thành công' });
@@ -359,11 +337,13 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
            setUsers(prevUsers => 
                prevUsers.map(u => (u.id === id ? updatedUser : u))
            );
+           
+           setSelectedUser(null); // Close modal on success
 
         } catch (error) {
             onSetNotification({ type: 'error', message: error instanceof Error ? error.message : 'Cập nhật người dùng thất bại' });
         } finally {
-            setSavingUserId(null);
+            setIsSaving(false);
         }
     };
 
@@ -388,9 +368,6 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
         </th>
     );
     
-    const userForModal = selectedUser ? users.find(u => u.id === selectedUser.id) : null;
-
-
     if (isLoading) {
         return <div className="flex justify-center items-center p-8"><LoadingSpinner className="h-10 w-10" /></div>;
     }
@@ -444,10 +421,8 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
                            <UserRow 
                                 key={user.id} 
                                 user={user} 
-                                onSave={handleSaveUser} 
                                 onViewDetails={setSelectedUser} 
                                 onDelete={handleDeleteUser} 
-                                isSaving={savingUserId === user.id}
                            />
                         ))}
                     </tbody>
@@ -485,7 +460,12 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
                 )}
             </div>
 
-            {userForModal && <UserDetailsModal user={userForModal} onClose={() => setSelectedUser(null)} onSave={handleSaveUser} />}
+            {selectedUser && <UserDetailsModal 
+                user={selectedUser} 
+                onClose={() => setSelectedUser(null)} 
+                onSave={handleSaveUser}
+                isSaving={isSaving}
+            />}
         </div>
     );
 };
