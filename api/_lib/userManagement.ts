@@ -1,5 +1,6 @@
+
 import { createClient, VercelKV } from '@vercel/kv';
-import { User, SubscriptionTier, Project, ManagedApiKeyEntry } from './types.js';
+import { User, SubscriptionTier, ManagedApiKeyEntry } from './types.js';
 import { ADMIN_USER_SEED } from './users.js';
 
 let kv: VercelKV | null = null;
@@ -277,58 +278,5 @@ export async function deleteUser(id: string): Promise<boolean> {
     await kv.del(`user:${id}`);
     await kv.del(`username:${user.username}`);
     await kv.srem('users', id);
-    return true;
-}
-
-// --- Project Management Functions ---
-
-const PROJECTS_LIST_KEY = (userId: string) => `projects:${userId}`;
-const PROJECT_KEY = (projectId: string) => `project:${projectId}`;
-
-export async function getProjectsForUser(userId: string): Promise<Project[]> {
-    const kv = getKv();
-    const projectIds = await kv.smembers(PROJECTS_LIST_KEY(userId));
-    if (!projectIds || projectIds.length === 0) return [];
-    
-    const pipeline = kv.pipeline();
-    projectIds.forEach(id => pipeline.hgetall(PROJECT_KEY(id)));
-    const results = await pipeline.exec<Record<string, any>[]>();
-
-    return results.filter(p => p).map(p => p as Project).sort((a,b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-}
-
-export async function createProject(userId: string, data: { name: string, text: string, voice: string }): Promise<Project> {
-    const kv = getKv();
-    const now = new Date().toISOString();
-    const projectId = `proj_${Date.now()}`;
-    
-    const newProject: Project = {
-        id: projectId,
-        userId,
-        name: data.name,
-        text: data.text,
-        voice: data.voice,
-        createdAt: now,
-        updatedAt: now,
-    };
-    
-    await kv.sadd(PROJECTS_LIST_KEY(userId), projectId);
-    // FIX: Cast project object to a type with an index signature to satisfy kv.hset.
-    await kv.hset(PROJECT_KEY(projectId), newProject as any);
-    
-    return newProject;
-}
-
-export async function deleteProject(userId: string, projectId: string): Promise<boolean> {
-    const kv = getKv();
-    const project = await kv.hgetall(PROJECT_KEY(projectId));
-
-    if (!project || project.userId !== userId) {
-        return false; // User does not own this project
-    }
-
-    await kv.del(PROJECT_KEY(projectId));
-    await kv.srem(PROJECTS_LIST_KEY(userId), projectId);
-    
     return true;
 }

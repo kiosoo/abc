@@ -1,8 +1,10 @@
+
 import { apiHandler } from './_lib/apiHandler.js';
 import { findUserById, updateUser } from './_lib/userManagement.js';
 import { smartSplit } from './_lib/textUtils.js';
 import { createClient } from '@vercel/kv';
-import { LONG_TEXT_CHUNK_SIZE, TTS_DAILY_API_LIMIT } from '../constants.js';
+// FIX: Corrected the import path to point to the constants file inside the src directory.
+import { LONG_TEXT_CHUNK_SIZE, TTS_DAILY_API_LIMIT } from '../src/constants.js';
 import { ManagedApiKeyEntry } from './_lib/types.js';
 import { generateSpeech, GeminiApiError } from './_lib/geminiService.js';
 import { decode, createWavBuffer, stitchPcmChunks } from './_lib/audioUtils.js';

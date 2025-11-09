@@ -1,3 +1,4 @@
+
 import { User, SubscriptionTier } from './types.js';
 
 // WARNING: This user object is now only for seeding the database if the admin doesn't exist.

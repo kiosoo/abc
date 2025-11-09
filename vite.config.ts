@@ -13,8 +13,8 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     resolve: {
       alias: {
-        // FIX: Replaced process.cwd() with '.'
-        '@': path.resolve('.'),
+        // FIX: Replaced process.cwd() with './src' to point to the new source directory
+        '@': path.resolve('./src'),
       },
     },
     server: {

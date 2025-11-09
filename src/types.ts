@@ -55,6 +55,14 @@ export interface Notification {
   message: string;
 }
 
+export interface LogEntry {
+  id: number;
+  message: string;
+  type: 'system' | 'info' | 'success' | 'error';
+  timestamp: string;
+}
+
+
 export enum ChatMode {
   STANDARD = 'standard',
   THINKING = 'thinking',
@@ -72,6 +80,7 @@ export interface VoiceOption {
   name: string;
 }
 
+// FIX: Add missing TimedWord interface to resolve import error.
 export interface TimedWord {
     word: string;
     startTime: string;
@@ -88,4 +97,15 @@ export interface VercelResponse extends BaseVercelResponse {
   status(code: number): this;
   json(data: any): this;
   send(body: any): this;
+}
+
+// New types for API Key Pool management
+export interface ApiKeyUsage {
+  count: number;
+  date: string; // YYYY-MM-DD
+}
+
+export interface ApiKeyEntry {
+  key: string;
+  usage: ApiKeyUsage;
 }
