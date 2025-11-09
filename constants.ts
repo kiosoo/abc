@@ -1,4 +1,4 @@
-import { VoiceOption, SubscriptionTier } from '@/types';
+import { VoiceOption, SubscriptionTier } from './types.js';
 
 export const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 export const LIVE_TRANSCRIPTION_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';

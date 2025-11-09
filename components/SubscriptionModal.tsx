@@ -136,14 +136,14 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
         const isCurrentUserTier = userTier === tier;
 
         return (
-            <div className={`flex flex-col rounded-lg px-3 py-2 border-2 ${details.style.border} ${details.style.bg} relative`}>
+            <div className={`flex flex-col rounded-lg p-4 border-2 ${details.style.border} ${details.style.bg} relative`}>
                  {details.kind === 'managed' && (
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-purple-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 text-white shadow-lg">
                         <StarIcon className="w-4 h-4" />
                         API Được Quản Lý
                     </div>
                 )}
-                <h3 className="text-sm font-bold text-white text-center">{details.name}</h3>
+                <h3 className="text-sm font-bold text-white text-center pt-2">{details.name}</h3>
                 <p className="text-center text-gray-400 mt-1 text-xs leading-tight">{details.description}</p>
 
                 {/* Price Block */}
@@ -169,7 +169,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                 </div>
 
                 {/* Limit Info Block */}
-                <div className="my-2 text-center h-10">
+                <div className="my-2 text-center min-h-[2.5rem]">
                     {details.kind === 'managed' ? (
                         <>
                             <span className="text-base font-bold text-white">{details.limitText}</span>
@@ -216,7 +216,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
 
     return (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-5xl relative animate-fade-in flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-5xl relative animate-fade-in flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
                 <style>{`
                     @keyframes fade-in {
                         from { opacity: 0; transform: scale(0.95); }
@@ -229,8 +229,8 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                     <p className="text-gray-400 mt-1">Chọn gói phù hợp nhất với nhu cầu sử dụng của bạn.</p>
                 </div>
 
-                <div className="p-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="p-4 flex-grow overflow-y-auto">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                         <PlanCard tier={SubscriptionTier.BASIC} />
                         <PlanCard tier={SubscriptionTier.PRO} />
                         <PlanCard tier={SubscriptionTier.ULTRA} />
