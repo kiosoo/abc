@@ -43,6 +43,15 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     const [finalAudioBlob, setFinalAudioBlob] = useState<Blob | null>(null);
     const [error, setError] = useState<string | null>(null);
     
+    const [processingMode, setProcessingMode] = useState<'sequential' | 'parallel'>(
+        () => (localStorage.getItem('ttsProcessingMode') as 'sequential' | 'parallel') || 'sequential'
+    );
+
+    useEffect(() => {
+        localStorage.setItem('ttsProcessingMode', processingMode);
+    }, [processingMode]);
+
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const isCancelledRef = useRef(false);
     
@@ -97,10 +106,13 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             currentJobId = newJobId;
             
             addLog(`Tác vụ đã được tạo. Tổng số phần: ${totalChunks}.`, 'info');
-            addLog('Bắt đầu xử lý với hàng đợi song song...', 'system');
+            
     
             // 2. Process chunks using a worker pool
-            const concurrencyLimit = user.managedApiKeys?.length || 1;
+            const concurrencyLimit = processingMode === 'parallel' ? 2 : 1;
+            const modeText = processingMode === 'parallel' ? 'song song (nhanh)' : 'tuần tự (ổn định)';
+            addLog(`Bắt đầu xử lý ${modeText} với giới hạn ${concurrencyLimit} luồng...`, 'system');
+
             const pcmChunksMap = new Map<number, Uint8Array>();
             let chunksProcessedCount = 0;
             let successfulChunksCount = 0;
@@ -133,8 +145,15 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     
                     } catch (e) {
                         const errorMsg = e instanceof Error ? e.message : `Xử lý thất bại.`;
-                        addLog(`Phần ${chunkIndex + 1}: Xử lý thất bại: Hạn ngạch API đã bị vượt quá cho key ...nZIg.`, 'error');
-                        setError(prev => prev ? `${prev}\n- Phần ${chunkIndex + 1}: ${errorMsg}` : `- Phần ${chunkIndex + 1}: ${errorMsg}`);
+                        addLog(`Phần ${chunkIndex + 1}: ${errorMsg}`, 'error');
+                        
+                        // Add helpful hint for quota errors
+                        const lowerErrorMsg = errorMsg.toLowerCase();
+                        if (lowerErrorMsg.includes('hạn ngạch') || lowerErrorMsg.includes('quota')) {
+                            addLog(`Gợi ý: Các API key từ cùng một dự án Google Cloud sẽ chia sẻ chung một hạn ngạch. Hãy cân nhắc bật thanh toán trên dự án để gỡ bỏ giới hạn.`, 'info');
+                        }
+
+                        setError(prev => prev ? `${prev}\n- ${errorMsg}` : `- ${errorMsg}`);
                     } finally {
                         chunksProcessedCount++;
                         setProgressStatus(`Đang xử lý phần ${chunksProcessedCount}/${totalChunks}...`);
@@ -143,7 +162,13 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                 }
             };
     
-            const workers = Array(concurrencyLimit).fill(null).map(() => worker());
+            const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+            const workers = Array(concurrencyLimit).fill(null).map(async (_, i) => {
+                if (processingMode === 'parallel') {
+                    await delay(i * 300); // Stagger start to avoid RPM limits
+                }
+                return worker();
+            });
             await Promise.all(workers);
     
             if (isCancelledRef.current) {
@@ -206,7 +231,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                 }
             }
         }
-    }, [text, selectedVoice, onSetNotification, resetState, onUsageUpdate, user.managedApiKeys]);
+    }, [text, selectedVoice, onSetNotification, resetState, onUsageUpdate, user.managedApiKeys, processingMode]);
 
 
     const handleGenerateSpeechSelfManaged = useCallback(async () => {
@@ -236,6 +261,8 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             
             const keyPoolRef = { current: JSON.parse(JSON.stringify(initialKeyPool)) as ApiKeyEntry[] };
             const taskQueue = [...chunks.entries()]; 
+            
+            let nextKeyIndex = 0;
     
             const worker = async () => {
                 while (true) {
@@ -247,9 +274,13 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                     let processed = false;
                     let finalError = 'Tất cả các key đều không thể xử lý chunk này.';
     
+                    const keyStartIndex = nextKeyIndex;
+                    nextKeyIndex = (nextKeyIndex + 1) % availableKeys.length;
+
                     for (let i = 0; i < availableKeys.length; i++) {
                         if (isCancelledRef.current) break;
-                        const keyToTry = availableKeys[(chunkIndex + i) % availableKeys.length];
+                        
+                        const keyToTry = availableKeys[(keyStartIndex + i) % availableKeys.length];
                         const liveKeyEntry = keyPoolRef.current.find(k => k.key === keyToTry.key)!;
     
                         if (liveKeyEntry.usage.count >= TTS_DAILY_API_LIMIT) continue;
@@ -298,6 +329,12 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                     if (!processed && !isCancelledRef.current) {
                         const finalLogMessage = `Phần ${chunkIndex + 1}: Xử lý thất bại. Lỗi cuối cùng: ${finalError}`;
                         addLog(finalLogMessage, 'error');
+                        
+                        const lowerFinalError = finalError.toLowerCase();
+                        if (lowerFinalError.includes('hạn ngạch') || lowerFinalError.includes('quota')) {
+                             addLog(`Gợi ý: Các API key từ cùng một dự án Google Cloud sẽ chia sẻ chung một hạn ngạch. Hãy cân nhắc bật thanh toán trên dự án để gỡ bỏ giới hạn.`, 'info');
+                        }
+
                         setError(prev => (prev ? prev + `\n- ${finalLogMessage}` : `- ${finalLogMessage}`));
                     }
     
@@ -307,9 +344,17 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                 }
             };
     
-            const concurrencyLimit = Math.min(availableKeys.length, 8);
-            addLog(`Bắt đầu xử lý song song với ${concurrencyLimit} worker.`, 'system');
-            const workers = Array(concurrencyLimit).fill(null).map((_, i) => worker());
+            const concurrencyLimit = processingMode === 'parallel' ? 2 : 1;
+            const modeText = processingMode === 'parallel' ? 'song song (nhanh)' : 'tuần tự (ổn định)';
+            addLog(`Bắt đầu xử lý ${modeText} với giới hạn ${concurrencyLimit} luồng...`, 'system');
+            
+            const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+            const workers = Array(concurrencyLimit).fill(null).map(async (_, i) => {
+                if (processingMode === 'parallel') {
+                    await delay(i * 300); // Stagger start to avoid RPM limits
+                }
+                return worker();
+            });
             await Promise.all(workers);
     
             if (isCancelledRef.current) throw new Error('Đã hủy tác vụ.');
@@ -347,7 +392,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
         } finally {
             setIsProcessing(false);
         }
-    }, [text, selectedVoice, onSetNotification, resetState, user, apiKeyPool, setApiKeyPool]);
+    }, [text, selectedVoice, onSetNotification, resetState, user, apiKeyPool, setApiKeyPool, processingMode]);
 
     const handleGenerateSpeech = () => {
         if (isManagedUser) {
@@ -487,16 +532,39 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                         </p>
                     </div>
                 </div>
-                 <button
-                    onClick={handleGenerateSpeech}
-                    disabled={isDisabled}
-                    className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
-                >
-                    {isProcessing ? <LoadingSpinner /> : null}
-                    {isProcessing ? 'Đang xử lý...' : 'Tạo âm thanh'}
-                </button>
+
+                 <div className="pt-2 border-t border-gray-700/50 flex flex-col sm:flex-row items-center gap-4">
+                     <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium text-gray-300 flex-shrink-0">Chế độ xử lý:</label>
+                        <div className="flex items-center rounded-lg bg-gray-900 p-1 border border-gray-600">
+                            <button 
+                                onClick={() => setProcessingMode('sequential')}
+                                disabled={isProcessing}
+                                className={`px-3 py-1 text-sm rounded-md transition-colors ${processingMode === 'sequential' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-300 hover:bg-gray-700/50'}`}
+                            >
+                                Ổn định (Tuần tự)
+                            </button>
+                            <button 
+                                onClick={() => setProcessingMode('parallel')}
+                                disabled={isProcessing}
+                                className={`px-3 py-1 text-sm rounded-md transition-colors ${processingMode === 'parallel' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-300 hover:bg-gray-700/50'}`}
+                            >
+                                Nhanh (Song song)
+                            </button>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleGenerateSpeech}
+                        disabled={isDisabled}
+                        className="w-full sm:w-auto flex-grow flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {isProcessing ? <LoadingSpinner /> : null}
+                        {isProcessing ? 'Đang xử lý...' : 'Tạo âm thanh'}
+                    </button>
+                </div>
                  {disabledReason && (
-                    <p className={`text-xs text-center mt-2 ${!isManagedUser && text.length > TIER_LIMITS[user.tier] ? 'text-red-400' : 'text-yellow-400'}`}>
+                    <p className={`text-xs text-center -mt-2 ${!isManagedUser && text.length > TIER_LIMITS[user.tier] ? 'text-red-400' : 'text-yellow-400'}`}>
                         {disabledReason}
                     </p>
                 )}

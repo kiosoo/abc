@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 // FIX: Add file extensions to imports to resolve module loading errors.
 import { User, Notification, SubscriptionTier, ManagedApiKeyEntry } from '@/types.ts';
-import { LoadingSpinner, ArrowUpIcon, ArrowDownIcon, ChevronDownIcon } from '@/components/Icons.tsx';
+import { LoadingSpinner, ArrowUpIcon, ArrowDownIcon, ChevronDownIcon, InfoIcon } from '@/components/Icons.tsx';
 import { fetchAllUsers, updateUserSubscription, deleteUser as deleteUserService } from '@/services/apiService.ts';
 import { TIER_LIMITS, TIER_COLORS, TTS_DAILY_API_LIMIT } from '@/constants.ts';
 
@@ -274,6 +273,14 @@ const UserDetailsModal: React.FC<{
                             </div>
                              {isEditingKeys ? (
                                 <>
+                                    <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3 text-sm mb-3 flex items-start gap-3">
+                                        <InfoIcon className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-blue-200">
+                                                <strong>Lưu ý:</strong> Các API key từ <strong className="font-semibold">cùng một dự án Google Cloud</strong> sẽ chia sẻ chung một hạn ngạch (15 yêu cầu/ngày cho gói miễn phí). Để có hiệu suất tốt nhất, hãy sử dụng các key từ các dự án khác nhau hoặc từ các dự án đã <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-cyan-400 font-semibold hover:underline">kích hoạt thanh toán</a>.
+                                            </p>
+                                        </div>
+                                    </div>
                                     <textarea
                                         value={managedKeys}
                                         onChange={(e) => setManagedKeys(e.target.value)}

@@ -114,7 +114,7 @@ async function handleProcessSingleChunk(req, res, session) {
                         await kv.hset(usageKey, { [keyEntry.key]: TTS_DAILY_API_LIMIT });
                     }
                     errorMsg = e instanceof Error ? e.message : String(e);
-                    console.error(`Key ...${keyEntry.key.slice(-4)} failed for job ${jobId}, chunk ${chunkIndex}: ${errorMsg}`);
+                    console.error(`Key ...${keyEntry.key.slice(-4)} failed for job ${jobId}, phần ${chunkIndex + 1}: ${errorMsg}`);
                 }
             }
         }
@@ -123,7 +123,7 @@ async function handleProcessSingleChunk(req, res, session) {
              // Return the audio directly to the client
             res.status(200).json({ base64Audio: audioBase64, chunkIndex: chunkIndex });
         } else {
-            res.status(500).json({ message: `Xử lý chunk ${chunkIndex} thất bại: ${errorMsg}`, chunkIndex: chunkIndex });
+            res.status(500).json({ message: `Xử lý phần ${chunkIndex + 1} thất bại: ${errorMsg}`, chunkIndex: chunkIndex });
         }
     } catch (error) {
         const message = error instanceof Error ? error.message : "Lỗi worker không xác định.";
