@@ -52,15 +52,12 @@ export default apiHandler({
                 chunks.push(text.substring(i, i + LONG_TEXT_CHUNK_SIZE));
             }
             
-            // To avoid hitting per-minute rate limits, we process chunks in parallel,
-            // with the number of parallel requests limited by the number of assigned keys.
-            if (chunks.length > user.managedApiKeys.length) {
-                 throw new Error(`Văn bản quá dài (${chunks.length} phần) so với số lượng API key được cấp (${user.managedApiKeys.length}). Vui lòng rút ngắn văn bản hoặc liên hệ quản trị viên.`);
-            }
+            const managedKeys = user.managedApiKeys;
+            const numKeys = managedKeys.length;
 
-            // Create a promise for each chunk using a unique API key.
+            // Create a promise for each chunk, rotating through the available API keys.
             const speechPromises = chunks.map((chunk, index) => {
-                const apiKey = user.managedApiKeys![index];
+                const apiKey = managedKeys[index % numKeys];
                 return generateSpeech(apiKey, chunk, voice).then(result => decode(result.base64Audio));
             });
 

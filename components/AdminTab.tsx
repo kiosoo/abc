@@ -104,90 +104,70 @@ const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete
     };
 
     const [expiresAt, setExpiresAt] = useState(formatDateForInput(user.subscriptionExpiresAt));
-    const [managedKeys, setManagedKeys] = useState((user.managedApiKeys || []).join('\n'));
+    
+    useEffect(() => {
+        setTier(user.tier);
+        setExpiresAt(formatDateForInput(user.subscriptionExpiresAt));
+    }, [user]);
 
-    const isManagedTierSelected = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(tier);
 
     const handleSave = () => {
         const expiresAtValue = expiresAt ? new Date(expiresAt).toISOString() : null;
-        const keys = isManagedTierSelected ? managedKeys.split('\n').map(k => k.trim()).filter(Boolean) : [];
-        onSave(user.id, { tier, subscriptionExpiresAt: expiresAtValue, managedApiKeys: keys });
+        onSave(user.id, { tier, subscriptionExpiresAt: expiresAtValue });
     };
-
-    const originalKeys = (user.managedApiKeys || []).join('\n');
-    const isChanged = tier !== user.tier || formatDateForInput(user.subscriptionExpiresAt) !== expiresAt || managedKeys !== originalKeys;
+    
+    const isChanged = tier !== user.tier || expiresAt !== formatDateForInput(user.subscriptionExpiresAt);
     const isExpired = user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) < new Date();
-
     const usernameColorClass = isExpired ? 'text-red-400 font-bold' : TIER_COLORS[user.tier];
 
     return (
-        <>
-            <tr className={isExpired ? 'bg-red-900/30' : ''}>
-                <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${usernameColorClass}`}>{user.username}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                    <select 
-                        value={tier} 
-                        onChange={e => setTier(e.target.value as SubscriptionTier)}
-                        className="bg-gray-700 border border-gray-600 rounded-md p-1"
-                        disabled={user.isAdmin}
-                    >
-                        {Object.values(SubscriptionTier).map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                    <input
-                        type="date"
-                        value={expiresAt}
-                        onChange={(e) => setExpiresAt(e.target.value)}
-                        className="w-40 bg-gray-700 border border-gray-600 rounded-md p-1"
-                        disabled={user.isAdmin}
-                    />
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono">{user.usage.ttsCharacters.toLocaleString()}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{timeAgo(user.lastLoginAt)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+        <tr className={`transition-colors ${isExpired ? 'bg-red-900/20 hover:bg-red-900/30' : 'hover:bg-gray-800/60'}`}>
+            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${usernameColorClass}`}>{user.username}</td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                <select 
+                    value={tier} 
+                    onChange={e => setTier(e.target.value as SubscriptionTier)}
+                    className="bg-gray-700 border border-gray-600 rounded-md p-1"
+                    disabled={user.isAdmin}
+                >
+                    {Object.values(SubscriptionTier).map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                <input
+                    type="date"
+                    value={expiresAt}
+                    onChange={(e) => setExpiresAt(e.target.value)}
+                    className="w-40 bg-gray-700 border border-gray-600 rounded-md p-1"
+                    disabled={user.isAdmin}
+                />
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono">{user.usage.ttsCharacters.toLocaleString()}</td>
+            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{timeAgo(user.lastLoginAt)}</td>
+            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                <button
+                    onClick={() => onViewDetails(user)}
+                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                    Chi tiết
+                </button>
+                <button
+                    onClick={handleSave}
+                    disabled={!isChanged}
+                    className="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                >
+                    Lưu
+                </button>
+                {!user.isAdmin && (
                     <button
-                        onClick={() => onViewDetails(user)}
-                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                        onClick={() => onDelete(user.id, user.username)}
+                        className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700"
                     >
-                        Chi tiết
+                        Xóa
                     </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={!isChanged}
-                        className="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                    >
-                        Lưu
-                    </button>
-                    {!user.isAdmin && (
-                        <button
-                            onClick={() => onDelete(user.id, user.username)}
-                            className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700"
-                        >
-                            Xóa
-                        </button>
-                    )}
-                </td>
-            </tr>
-            {isManagedTierSelected && (
-                <tr className={isExpired ? 'bg-red-900/30' : ''}>
-                    <td colSpan={6} className="px-6 py-3 bg-gray-900/50">
-                        <div className="pl-2">
-                            <label className="block text-sm font-medium text-gray-300 mb-1">
-                                Managed API Keys (1 key mỗi dòng)
-                            </label>
-                            <textarea
-                                value={managedKeys}
-                                onChange={(e) => setManagedKeys(e.target.value)}
-                                placeholder="Dán các API key được quản lý vào đây..."
-                                className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 font-mono text-sm"
-                                rows={3}
-                            />
-                        </div>
-                    </td>
-                </tr>
-            )}
-        </>
+                )}
+            </td>
+        </tr>
     );
 };
 
@@ -374,17 +354,17 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
 
     const handleSaveUser = async (id: string, updates: Partial<User>) => {
         try {
-           await updateUserSubscription(id, updates);
+           const updatedUser = await updateUserSubscription(id, updates);
            onSetNotification({ type: 'success', message: 'Cập nhật người dùng thành công' });
-           // Refresh data
-           const usersData = await fetchAllUsers();
-           setUsers(usersData);
-           // Update selected user if it's the one being edited
+           
+           // Update user in the list without refetching the whole list
+           setUsers(prevUsers => 
+               prevUsers.map(u => u.id === id ? { ...u, ...updatedUser } : u)
+           );
+
+           // If the modal is open for this user, update its data too
            if (selectedUser && selectedUser.id === id) {
-               const updatedSelectedUser = usersData.find(u => u.id === id);
-               if (updatedSelectedUser) {
-                   setSelectedUser(updatedSelectedUser);
-               }
+               setSelectedUser(prevSelected => prevSelected ? { ...prevSelected, ...updatedUser } : null);
            }
         } catch (error) {
             onSetNotification({ type: 'error', message: error instanceof Error ? error.message : 'Cập nhật người dùng thất bại' });

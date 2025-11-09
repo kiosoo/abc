@@ -99,7 +99,8 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
         try {
             if (isManagedUser) {
                 // --- Managed User Flow ---
-                setStatusMessage('Đang xử lý trên server, vui lòng chờ...');
+                const chunksCount = Math.ceil(text.length / LONG_TEXT_CHUNK_SIZE);
+                setStatusMessage(`Đang gửi yêu cầu xử lý ${chunksCount.toLocaleString()} phần văn bản song song...`);
                 const finalBlob = await generateManagedSpeech(text, selectedVoice);
                 setAudioBlob(finalBlob);
                 setProgress(100);
