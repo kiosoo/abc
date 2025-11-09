@@ -177,6 +177,11 @@ const UserDetailsModal: React.FC<{
     
     const [managedKeys, setManagedKeys] = useState((user.managedApiKeys || []).join('\n'));
 
+    // Sync state with prop changes to ensure the modal reflects the latest data after a save.
+    useEffect(() => {
+        setManagedKeys((user.managedApiKeys || []).join('\n'));
+    }, [user.managedApiKeys]);
+
     const isManagedTier = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(user.tier);
 
     const handleSaveChanges = async () => {
