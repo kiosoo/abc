@@ -39,6 +39,24 @@ const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
     if (!rawUser) return null;
     try {
         const defaultUsage = { ttsCharacters: 0, usageDate: new Date().toISOString().split('T')[0] };
+        
+        // Robust parsing for managedApiKeys to handle potential auto-parsing by the KV client.
+        let parsedManagedApiKeys: string[] = [];
+        const rawKeys = rawUser.managedApiKeys;
+        if (typeof rawKeys === 'string') {
+            try {
+                const parsed = JSON.parse(rawKeys);
+                if (Array.isArray(parsed)) {
+                    parsedManagedApiKeys = parsed.filter(item => typeof item === 'string');
+                }
+            } catch (e) {
+                console.warn('Could not parse managedApiKeys from string, defaulting to empty array.', rawKeys);
+            }
+        } else if (Array.isArray(rawKeys)) {
+            // Handle case where @vercel/kv might have auto-parsed the JSON string into an array.
+            parsedManagedApiKeys = rawKeys.filter(item => typeof item === 'string');
+        }
+
         // Manually construct the user object to ensure all types are correct,
         // preventing crashes from unexpected data types or missing fields.
         const user: User = {
@@ -56,7 +74,7 @@ const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
             // Explicitly parse boolean and JSON strings from KV
             isAdmin: String(rawUser.isAdmin).toLowerCase() === 'true',
             usage: typeof rawUser.usage === 'string' ? JSON.parse(rawUser.usage) : defaultUsage,
-            managedApiKeys: typeof rawUser.managedApiKeys === 'string' ? JSON.parse(rawUser.managedApiKeys) : [],
+            managedApiKeys: parsedManagedApiKeys,
         };
         return user;
     } catch (e) {
@@ -165,40 +183,59 @@ export async function getAllUsers(): Promise<Omit<User, 'password'>[]> {
 
 export async function updateUser(id: string, updates: Partial<Omit<User, 'id' | 'password'>>): Promise<Omit<User, 'password'> | null> {
     const kv = getKv();
+
+    // First, verify the user exists to prevent operating on non-existent records.
     const user = await findUserById(id);
     if (!user) {
         return null;
     }
     
+    // Business rule: prevent de-admining the main admin account.
     if (user.username === 'admin' && updates.isAdmin === false) {
         return null;
     }
 
-    const updatedData = { ...user, ...updates };
+    const updatesForKv: { [key: string]: string | number | boolean } = {};
 
-    // Explicitly convert complex/boolean types to strings before storing in KV hash.
-    const dataForKv: { [key: string]: any } = { ...updatedData };
-    if (typeof dataForKv.isAdmin !== 'undefined') {
-        dataForKv.isAdmin = String(dataForKv.isAdmin);
-    }
-     if (typeof dataForKv.usage !== 'undefined') {
-        dataForKv.usage = JSON.stringify(dataForKv.usage);
-    }
-    if (typeof dataForKv.managedApiKeys !== 'undefined') {
-        dataForKv.managedApiKeys = JSON.stringify(dataForKv.managedApiKeys);
-    }
+    // Iterate over the provided updates to process them for KV storage.
+    for (const key in updates) {
+        if (Object.prototype.hasOwnProperty.call(updates, key)) {
+            const value = updates[key as keyof typeof updates];
 
-    // Sanitize null values before sending to KV to prevent "ERR null args" error.
-    for (const key in dataForKv) {
-        if (dataForKv[key] === null) {
-            delete dataForKv[key];
+            if (value === null) {
+                // A `null` value from the client signifies deletion of the field.
+                await kv.hdel(`user:${id}`, key);
+            } else if (value !== undefined) {
+                // For any other non-undefined value, format it and add to our update object.
+                if (key === 'isAdmin') {
+                    updatesForKv[key] = String(value);
+                } else if (key === 'usage' || key === 'managedApiKeys') {
+                    updatesForKv[key] = JSON.stringify(value);
+                } else {
+                    // Primitive values can be set directly.
+                    updatesForKv[key] = value as any;
+                }
+            }
         }
     }
 
-    await kv.hset(`user:${id}`, dataForKv);
-
-    const { password, ...updatedUser } = updatedData;
-    return updatedUser;
+    // If there are any non-null fields to update, execute a single `hset` command.
+    if (Object.keys(updatesForKv).length > 0) {
+        await kv.hset(`user:${id}`, updatesForKv);
+    }
+    
+    // CRITICAL: Fetch the user again from the database after all updates.
+    // This ensures the returned object is a true representation of the stored state,
+    // guaranteeing consistency between the backend and the frontend.
+    const updatedUserFromDb = await findUserById(id);
+    if (!updatedUserFromDb) {
+        // This should not happen if the user existed initially, but is a safeguard.
+        throw new Error("Failed to retrieve user after update.");
+    }
+    
+    // Omit password before returning.
+    const { password, ...userToReturn } = updatedUserFromDb;
+    return userToReturn;
 }
 
 export async function logTtsUsage(userId: string, characterCount: number): Promise<void> {
