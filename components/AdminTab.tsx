@@ -104,65 +104,90 @@ const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete
     };
 
     const [expiresAt, setExpiresAt] = useState(formatDateForInput(user.subscriptionExpiresAt));
+    const [managedKeys, setManagedKeys] = useState((user.managedApiKeys || []).join('\n'));
+
+    const isManagedTierSelected = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(tier);
 
     const handleSave = () => {
         const expiresAtValue = expiresAt ? new Date(expiresAt).toISOString() : null;
-        onSave(user.id, { tier, subscriptionExpiresAt: expiresAtValue });
+        const keys = isManagedTierSelected ? managedKeys.split('\n').map(k => k.trim()).filter(Boolean) : [];
+        onSave(user.id, { tier, subscriptionExpiresAt: expiresAtValue, managedApiKeys: keys });
     };
 
-    const isChanged = tier !== user.tier || formatDateForInput(user.subscriptionExpiresAt) !== expiresAt;
+    const originalKeys = (user.managedApiKeys || []).join('\n');
+    const isChanged = tier !== user.tier || formatDateForInput(user.subscriptionExpiresAt) !== expiresAt || managedKeys !== originalKeys;
     const isExpired = user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) < new Date();
 
     const usernameColorClass = isExpired ? 'text-red-400 font-bold' : TIER_COLORS[user.tier];
 
     return (
-        <tr key={user.id} className={isExpired ? 'bg-red-900/30' : ''}>
-            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${usernameColorClass}`}>{user.username}</td>
-            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                <select 
-                    value={tier} 
-                    onChange={e => setTier(e.target.value as SubscriptionTier)}
-                    className="bg-gray-700 border border-gray-600 rounded-md p-1"
-                    disabled={user.isAdmin}
-                >
-                    {Object.values(SubscriptionTier).map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-            </td>
-            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                 <input
-                    type="date"
-                    value={expiresAt}
-                    onChange={(e) => setExpiresAt(e.target.value)}
-                    className="w-40 bg-gray-700 border border-gray-600 rounded-md p-1"
-                    disabled={user.isAdmin}
-                />
-            </td>
-            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono">{user.usage.ttsCharacters.toLocaleString()}</td>
-            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{timeAgo(user.lastLoginAt)}</td>
-            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                 <button
-                    onClick={() => onViewDetails(user)}
-                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                >
-                    Chi tiết
-                </button>
-                <button
-                    onClick={handleSave}
-                    disabled={!isChanged}
-                    className="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                >
-                    Lưu
-                </button>
-                 {!user.isAdmin && (
-                    <button
-                        onClick={() => onDelete(user.id, user.username)}
-                        className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700"
+        <>
+            <tr className={isExpired ? 'bg-red-900/30' : ''}>
+                <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${usernameColorClass}`}>{user.username}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                    <select 
+                        value={tier} 
+                        onChange={e => setTier(e.target.value as SubscriptionTier)}
+                        className="bg-gray-700 border border-gray-600 rounded-md p-1"
+                        disabled={user.isAdmin}
                     >
-                        Xóa
+                        {Object.values(SubscriptionTier).map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                    <input
+                        type="date"
+                        value={expiresAt}
+                        onChange={(e) => setExpiresAt(e.target.value)}
+                        className="w-40 bg-gray-700 border border-gray-600 rounded-md p-1"
+                        disabled={user.isAdmin}
+                    />
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono">{user.usage.ttsCharacters.toLocaleString()}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{timeAgo(user.lastLoginAt)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                    <button
+                        onClick={() => onViewDetails(user)}
+                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    >
+                        Chi tiết
                     </button>
-                )}
-            </td>
-        </tr>
+                    <button
+                        onClick={handleSave}
+                        disabled={!isChanged}
+                        className="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                    >
+                        Lưu
+                    </button>
+                    {!user.isAdmin && (
+                        <button
+                            onClick={() => onDelete(user.id, user.username)}
+                            className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700"
+                        >
+                            Xóa
+                        </button>
+                    )}
+                </td>
+            </tr>
+            {isManagedTierSelected && (
+                <tr className={isExpired ? 'bg-red-900/30' : ''}>
+                    <td colSpan={6} className="px-6 py-3 bg-gray-900/50">
+                        <div className="pl-2">
+                            <label className="block text-sm font-medium text-gray-300 mb-1">
+                                Managed API Keys (1 key mỗi dòng)
+                            </label>
+                            <textarea
+                                value={managedKeys}
+                                onChange={(e) => setManagedKeys(e.target.value)}
+                                placeholder="Dán các API key được quản lý vào đây..."
+                                className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 font-mono text-sm"
+                                rows={3}
+                            />
+                        </div>
+                    </td>
+                </tr>
+            )}
+        </>
     );
 };
 
@@ -326,14 +351,16 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
             .sort((a, b) => {
                 const getSortValue = (user: Omit<User, 'password'>, column: string) => {
                     if (column === 'usage') return user.usage.ttsCharacters;
+                    if (column === 'lastLoginAt') return user.lastLoginAt ? new Date(user.lastLoginAt).getTime() : 0;
+                    if (column === 'subscriptionExpiresAt') return user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt).getTime() : 0;
                     return user[column as keyof Omit<User, 'password'>];
                 }
                 
                 const valA = getSortValue(a, sortColumn);
                 const valB = getSortValue(b, sortColumn);
 
-                if (valA === null) return 1;
-                if (valB === null) return -1;
+                if (valA === null || valA === 0) return 1;
+                if (valB === null || valB === 0) return -1;
                 
                 let comparison = 0;
                 if (valA > valB) {

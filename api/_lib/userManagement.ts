@@ -48,11 +48,11 @@ const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
             firstName: rawUser.firstName,
             lastName: rawUser.lastName,
             tier: rawUser.tier as SubscriptionTier,
-            subscriptionExpiresAt: rawUser.subscriptionExpiresAt,
+            subscriptionExpiresAt: rawUser.subscriptionExpiresAt || null,
             createdAt: rawUser.createdAt,
-            lastLoginAt: rawUser.lastLoginAt,
-            ipAddress: rawUser.ipAddress,
-            activeSessionToken: rawUser.activeSessionToken,
+            lastLoginAt: rawUser.lastLoginAt || null,
+            ipAddress: rawUser.ipAddress || null,
+            activeSessionToken: rawUser.activeSessionToken || null,
             // Explicitly parse boolean and JSON strings from KV
             isAdmin: String(rawUser.isAdmin).toLowerCase() === 'true',
             usage: typeof rawUser.usage === 'string' ? JSON.parse(rawUser.usage) : defaultUsage,
@@ -123,12 +123,19 @@ export async function createUser(userData: Partial<Omit<User, 'id'>> & Pick<User
 
     // Explicitly convert complex/boolean types to strings before storing in KV hash.
     // This prevents data type mismatches between the application and the database.
-    const userForKv = {
+    const userForKv: Record<string, any> = {
         ...newUser,
         isAdmin: String(newUser.isAdmin),
         usage: JSON.stringify(newUser.usage),
         managedApiKeys: JSON.stringify(newUser.managedApiKeys),
     };
+    
+    // Sanitize null values before sending to KV to prevent "ERR null args" error.
+    for (const key in userForKv) {
+        if (userForKv[key] === null) {
+            delete userForKv[key];
+        }
+    }
 
     await kv.hset(`user:${userId}`, userForKv);
     await kv.set(`username:${newUser.username}`, userId);
@@ -177,6 +184,12 @@ export async function updateUser(id: string, updates: Partial<Omit<User, 'id' | 
         dataForKv.managedApiKeys = JSON.stringify(dataForKv.managedApiKeys);
     }
 
+    // Sanitize null values before sending to KV to prevent "ERR null args" error.
+    for (const key in dataForKv) {
+        if (dataForKv[key] === null) {
+            delete dataForKv[key];
+        }
+    }
 
     await kv.hset(`user:${id}`, dataForKv);
 
