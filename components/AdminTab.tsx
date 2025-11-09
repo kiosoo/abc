@@ -120,14 +120,33 @@ const UserDetailsModal: React.FC<{
     const [tier, setTier] = useState(user.tier);
     const [expiresAt, setExpiresAt] = useState(formatDateForInput(user.subscriptionExpiresAt));
     const [managedKeys, setManagedKeys] = useState((user.managedApiKeys || []).join('\n'));
+    const [isEditingKeys, setIsEditingKeys] = useState(false);
+
+    const isPaidTier = useMemo(() => tier !== SubscriptionTier.BASIC, [tier]);
+    const isManagedTier = useMemo(() => [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(tier), [tier]);
 
     useEffect(() => {
         setTier(user.tier);
         setExpiresAt(formatDateForInput(user.subscriptionExpiresAt));
         setManagedKeys((user.managedApiKeys || []).join('\n'));
-    }, [user]);
+        const shouldEdit = isManagedTier && (!user.managedApiKeys || user.managedApiKeys.length === 0);
+        setIsEditingKeys(shouldEdit);
+    }, [user, isManagedTier]);
 
-    const isManagedTier = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(tier);
+    useEffect(() => {
+        if (tier === SubscriptionTier.BASIC) {
+            setExpiresAt('');
+        } else if (user.tier === SubscriptionTier.BASIC) {
+            const defaultExpiresAt = new Date();
+            defaultExpiresAt.setMonth(defaultExpiresAt.getMonth() + 1);
+            setExpiresAt(formatDateForInput(defaultExpiresAt.toISOString()));
+        }
+    }, [tier, user.tier]);
+
+    const handleCancelEditKeys = () => {
+        setIsEditingKeys(false);
+        setManagedKeys((user.managedApiKeys || []).join('\n'));
+    };
     
     const limit = TIER_LIMITS[tier];
     const usagePercentage = limit === Infinity ? 0 : Math.min((user.usage.ttsCharacters / limit) * 100, 100);
@@ -140,9 +159,12 @@ const UserDetailsModal: React.FC<{
         const updates: Partial<User> = {};
         
         if (tier !== user.tier) updates.tier = tier;
-        if (expiresAt !== formatDateForInput(user.subscriptionExpiresAt)) {
-            updates.subscriptionExpiresAt = expiresAt ? new Date(expiresAt).toISOString() : null;
+
+        const newExpiresAt = tier === SubscriptionTier.BASIC ? null : (expiresAt ? new Date(expiresAt).toISOString() : null);
+        if (newExpiresAt !== user.subscriptionExpiresAt) {
+            updates.subscriptionExpiresAt = newExpiresAt;
         }
+        
         if (managedKeys !== (user.managedApiKeys || []).join('\n')) {
             updates.managedApiKeys = managedKeys.split('\n').map(k => k.trim()).filter(Boolean);
         }
@@ -180,8 +202,8 @@ const UserDetailsModal: React.FC<{
                                     type="date"
                                     value={expiresAt}
                                     onChange={(e) => setExpiresAt(e.target.value)}
-                                    className="w-full bg-gray-700 border border-gray-600 rounded-md p-1 text-white"
-                                    disabled={user.isAdmin || isSaving}
+                                    className="w-full bg-gray-700 border border-gray-600 rounded-md p-1 text-white disabled:bg-gray-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                                    disabled={user.isAdmin || isSaving || !isPaidTier}
                                 />
                             </div>
                         </div>
@@ -213,16 +235,44 @@ const UserDetailsModal: React.FC<{
                     {isManagedTier && (
                         <div>
                             <h4 className="text-sm font-medium text-gray-400 mb-2">API Keys được Quản lý</h4>
-                            
-                            <textarea
-                                value={managedKeys}
-                                onChange={(e) => setManagedKeys(e.target.value)}
-                                placeholder="Dán các API key vào đây để cập nhật hoặc thêm mới, mỗi key một dòng."
-                                className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 resize-y focus:ring-2 focus:ring-purple-500 font-mono text-sm"
-                                rows={4}
-                                disabled={isSaving}
-                            />
-                             <p className="text-xs text-gray-500 mt-1">Lưu ý: Việc lưu sẽ ghi đè toàn bộ danh sách key hiện có bằng nội dung bên trên.</p>
+                             {isEditingKeys ? (
+                                <>
+                                    <textarea
+                                        value={managedKeys}
+                                        onChange={(e) => setManagedKeys(e.target.value)}
+                                        placeholder="Dán các API key vào đây, mỗi key một dòng."
+                                        className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 resize-y focus:ring-2 focus:ring-purple-500 font-mono text-sm"
+                                        rows={4}
+                                        disabled={isSaving}
+                                    />
+                                    <div className="flex justify-between items-center">
+                                        <p className="text-xs text-gray-500 mt-1">Việc lưu sẽ ghi đè toàn bộ danh sách key hiện có.</p>
+                                        {(user.managedApiKeys && user.managedApiKeys.length > 0) && (
+                                            <button 
+                                                onClick={handleCancelEditKeys} 
+                                                className="text-xs text-cyan-400 hover:underline mt-1"
+                                                disabled={isSaving}
+                                            >
+                                                Hủy
+                                            </button>
+                                        )}
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="bg-gray-900/50 p-3 rounded-md border border-gray-600 flex justify-between items-center">
+                                    <div>
+                                        <p className="font-semibold text-white">Các Keys đang hoạt động ({user.managedApiKeys?.length || 0})</p>
+                                        <p className="text-xs text-gray-400">Hệ thống sẽ tự động sử dụng các key này.</p>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsEditingKeys(true)} 
+                                        className="px-3 py-1 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-500"
+                                        disabled={isSaving}
+                                    >
+                                        Thay đổi
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -338,7 +388,7 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
                prevUsers.map(u => (u.id === id ? updatedUser : u))
            );
            
-           setSelectedUser(null); // Close modal on success
+           setSelectedUser(updatedUser); // Update modal with fresh data instead of closing
 
         } catch (error) {
             onSetNotification({ type: 'error', message: error instanceof Error ? error.message : 'Cập nhật người dùng thất bại' });

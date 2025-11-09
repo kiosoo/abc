@@ -104,12 +104,16 @@ export async function createUser(userData: Partial<Omit<User, 'id'>> & Pick<User
     const now = new Date().toISOString();
     const userId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
+    const newUserTier = userData.tier || SubscriptionTier.BASIC;
+
     const newUser: User = {
         ...userData,
         id: userId,
         isAdmin: userData.isAdmin || false,
-        tier: userData.tier || SubscriptionTier.BASIC,
-        subscriptionExpiresAt: userData.subscriptionExpiresAt !== undefined ? userData.subscriptionExpiresAt : trialEndDate.toISOString(),
+        tier: newUserTier,
+        subscriptionExpiresAt: newUserTier === SubscriptionTier.BASIC
+            ? null
+            : (userData.subscriptionExpiresAt !== undefined ? userData.subscriptionExpiresAt : trialEndDate.toISOString()),
         createdAt: now,
         lastLoginAt: now,
         ipAddress: ipAddress,

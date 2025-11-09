@@ -29,7 +29,9 @@ const tierDetails = {
     [SubscriptionTier.PRO]: {
         kind: 'standard' as const,
         name: 'Pro',
-        price: 'Liên hệ',
+        price: '49,000 VNĐ',
+        originalPrice: '79,000 VNĐ',
+        discount: 'GIẢM 38%',
         description: 'Dành cho người dùng thường xuyên cần giới hạn nhập liệu cao hơn.',
         limit: TIER_LIMITS[SubscriptionTier.PRO],
         features: [
@@ -46,7 +48,9 @@ const tierDetails = {
     [SubscriptionTier.ULTRA]: {
         kind: 'standard' as const,
         name: 'Ultra',
-        price: 'Liên hệ',
+        price: '99,000 VNĐ',
+        originalPrice: '149,000 VNĐ',
+        discount: 'GIẢM 34%',
         description: 'Giải pháp toàn diện cho doanh nghiệp và người dùng chuyên nghiệp.',
         limit: TIER_LIMITS[SubscriptionTier.ULTRA],
          features: [
@@ -63,7 +67,9 @@ const tierDetails = {
     [SubscriptionTier.STAR]: {
         kind: 'managed' as const,
         name: 'Star',
-        price: 'Liên hệ',
+        price: '69,000 VNĐ',
+        originalPrice: '99,000 VNĐ',
+        discount: 'GIẢM 30%',
         description: 'Trải nghiệm liền mạch với API được quản lý và hạn ngạch hàng ngày lớn.',
         limitText: '140,000 ký tự/ngày',
         subtext: '~3 giờ giọng nói',
@@ -82,7 +88,9 @@ const tierDetails = {
     [SubscriptionTier.SUPER_STAR]: {
         kind: 'managed' as const,
         name: 'Super Star',
-        price: 'Liên hệ',
+        price: '129,000 VNĐ',
+        originalPrice: '199,000 VNĐ',
+        discount: 'GIẢM 35%',
         description: 'Sức mạnh tối đa cho các tác vụ chuyển văn bản thành giọng nói quy mô lớn.',
         limitText: '280,000 ký tự/ngày',
         subtext: '~6 giờ giọng nói',
@@ -101,7 +109,9 @@ const tierDetails = {
     [SubscriptionTier.VVIP]: {
         kind: 'managed' as const,
         name: 'VVIP',
-        price: 'Liên hệ',
+        price: '249,000 VNĐ',
+        originalPrice: '399,000 VNĐ',
+        discount: 'GIẢM 38%',
         description: 'Giải pháp đỉnh cao cho người dùng chuyên nghiệp và các tác vụ quy mô cực lớn.',
         limitText: '700,000 ký tự/ngày',
         subtext: '~15 giờ giọng nói',
@@ -136,19 +146,43 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                 <h3 className="text-sm font-bold text-white text-center">{details.name}</h3>
                 <p className="text-center text-gray-400 mt-1 text-xs leading-tight">{details.description}</p>
 
-                <div className="my-2 text-center">
-                    {details.kind === 'managed' ? (
-                        <>
-                            <span className="text-lg font-extrabold text-white">{details.limitText}</span>
-                            <span className="block text-xs font-medium text-gray-400">{details.subtext}</span>
-                        </>
+                {/* Price Block */}
+                <div className="my-3 text-center">
+                    {tier === SubscriptionTier.BASIC ? (
+                        <span className="text-3xl font-extrabold text-white">Miễn phí</span>
                     ) : (
-                         <>
-                            <span className="text-lg font-extrabold text-white">{details.limit === Infinity ? 'Vô hạn' : details.limit.toLocaleString()}</span>
-                            <span className="block text-xs font-medium text-gray-400"> ký tự / lần nhập</span>
+                        <>
+                            <div className="flex items-baseline justify-center gap-2">
+                                <span className="text-3xl font-extrabold text-white">{details.price}</span>
+                                {/* FIX: Check for property existence before rendering to prevent TypeScript errors. */}
+                                {'originalPrice' in details && <s className="text-lg text-gray-500">{details.originalPrice}</s>}
+                            </div>
+                            <span className="block text-xs font-medium text-gray-400 mb-2">/ tháng</span>
+                            {/* FIX: Check for property existence before rendering to prevent TypeScript errors. */}
+                            {'discount' in details && (
+                                <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                    {details.discount}
+                                </span>
+                            )}
                         </>
                     )}
                 </div>
+
+                {/* Limit Info Block */}
+                <div className="my-2 text-center h-10">
+                    {details.kind === 'managed' ? (
+                        <>
+                            <span className="text-base font-bold text-white">{details.limitText}</span>
+                            <span className="block text-xs font-medium text-gray-400">{details.subtext}</span>
+                        </>
+                    ) : tier !== SubscriptionTier.BASIC ? (
+                         <>
+                            <span className="text-base font-bold text-white">{details.limit === Infinity ? 'Vô hạn' : details.limit.toLocaleString()}</span>
+                            <span className="block text-xs font-medium text-gray-400"> ký tự / lần nhập</span>
+                        </>
+                    ) : null}
+                </div>
+
 
                 <ul className="space-y-0.5 text-gray-300 flex-grow text-xs">
                     {details.features.map((feature, index) => (
