@@ -1,10 +1,11 @@
 import { getIronSession, SessionOptions, IronSession } from 'iron-session';
 import { User, VercelRequest, VercelResponse } from './types.js';
+import { findUserById } from './userManagement.js';
 
 // FIX: Define an explicit type for our session data.
 // FIX: 'IronSessionData' is not an exported member of 'iron-session'.
 // The session data type is defined with just the application-specific fields.
-type AppSessionData = Partial<Omit<User, 'password'>>;
+type AppSessionData = Partial<Omit<User, 'password'>> & { activeSessionToken?: string | null };
 
 type ApiHandler = (
   req: VercelRequest,
@@ -51,6 +52,20 @@ export function apiHandler(handlers: Handlers) {
       // FIX: Cast `req` and `res` to `any` to satisfy `getIronSession`'s type requirements,
       // as VercelRequest/VercelResponse are custom types not assignable to Node's IncomingMessage/ServerResponse.
       const session = await getIronSession<AppSessionData>(req as any, res as any, sessionOptions);
+
+      // --- CONCURRENT SESSION VALIDATION ---
+      // Run this check for any user with an active session, except for the login/logout endpoints.
+      if (session.id && (session as any).activeSessionToken && req.url !== '/api/auth/login' && req.url !== '/api/auth/logout') {
+        const userFromDb = await findUserById(session.id);
+        
+        // If user is deleted or session token doesn't match, invalidate the session.
+        if (!userFromDb || userFromDb.activeSessionToken !== (session as any).activeSessionToken) {
+          await session.destroy();
+          return res.status(401).json({ 
+            message: 'Phiên của bạn đã hết hạn do có một đăng nhập mới từ thiết bị khác. Vui lòng đăng nhập lại.' 
+          });
+        }
+      }
 
       // --- Method Routing ---
       const handler = req.method ? handlers[req.method] : undefined;

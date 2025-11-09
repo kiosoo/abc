@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { User, Notification, SubscriptionTier, BugReport } from '@/types';
 import { LoadingSpinner, ArrowUpIcon, ArrowDownIcon, ChevronDownIcon } from '@/components/Icons';
-import { fetchAllUsers, updateUserSubscription, fetchBugReports } from '@/services/apiService';
-import { TIER_LIMITS } from '@/constants';
+import { fetchAllUsers, updateUserSubscription, fetchBugReports, deleteUser as deleteUserService } from '@/services/apiService';
+import { TIER_LIMITS, TIER_COLORS } from '@/constants';
 
 const timeAgo = (dateString: string | null): string => {
     if (!dateString) return 'Chưa có';
@@ -88,9 +88,10 @@ interface UserRowProps {
     user: Omit<User, 'password'>;
     onSave: (id: string, updates: Partial<User>) => void;
     onViewDetails: (user: Omit<User, 'password'>) => void;
+    onDelete: (id: string, username: string) => void;
 }
 
-const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails }) => {
+const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete }) => {
     const [tier, setTier] = useState(user.tier);
     
     const formatDateForInput = (isoDate: string | null) => {
@@ -110,10 +111,13 @@ const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails }) => {
     };
 
     const isChanged = tier !== user.tier || formatDateForInput(user.subscriptionExpiresAt) !== expiresAt;
+    const isExpired = user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) < new Date();
+
+    const usernameColorClass = isExpired ? 'text-red-400 font-bold' : TIER_COLORS[user.tier];
 
     return (
-        <tr key={user.id}>
-            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{user.username}</td>
+        <tr key={user.id} className={isExpired ? 'bg-red-900/30' : ''}>
+            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${usernameColorClass}`}>{user.username}</td>
             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                 <select 
                     value={tier} 
@@ -149,14 +153,41 @@ const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails }) => {
                 >
                     Lưu
                 </button>
+                 {!user.isAdmin && (
+                    <button
+                        onClick={() => onDelete(user.id, user.username)}
+                        className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700"
+                    >
+                        Xóa
+                    </button>
+                )}
             </td>
         </tr>
     );
 };
 
-const UserDetailsModal: React.FC<{ user: Omit<User, 'password'>, onClose: () => void }> = ({ user, onClose }) => {
+const UserDetailsModal: React.FC<{ 
+    user: Omit<User, 'password'>;
+    onClose: () => void;
+    onSave: (id: string, updates: Partial<User>) => Promise<void>;
+}> = ({ user, onClose, onSave }) => {
     const limit = TIER_LIMITS[user.tier];
     const usagePercentage = limit === Infinity ? 0 : Math.min((user.usage.ttsCharacters / limit) * 100, 100);
+    const [isLoading, setIsLoading] = useState(false);
+    
+    const [managedKeys, setManagedKeys] = useState((user.managedApiKeys || []).join('\n'));
+
+    const isManagedTier = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(user.tier);
+
+    const handleSaveChanges = async () => {
+        setIsLoading(true);
+        try {
+            const keys = managedKeys.split('\n').map(k => k.trim()).filter(Boolean);
+            await onSave(user.id, { managedApiKeys: keys });
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -165,11 +196,11 @@ const UserDetailsModal: React.FC<{ user: Omit<User, 'password'>, onClose: () => 
                     <h3 className="text-xl font-bold text-white">{user.firstName} {user.lastName}</h3>
                     <p className="text-sm text-gray-400">@{user.username}</p>
                 </div>
-                <div className="p-6 space-y-4">
+                <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                     <div>
                         <h4 className="text-sm font-medium text-gray-400 mb-2">Thông tin Gói</h4>
                         <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-500">Gói:</span> <span className="text-white font-semibold">{user.tier}</span></div>
+                            <div><span className="text-gray-500">Gói:</span> <span className={`font-semibold ${TIER_COLORS[user.tier]}`}>{user.tier}</span></div>
                             <div><span className="text-gray-500">Hết hạn:</span> <span className="text-white font-semibold">{user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt).toLocaleDateString('vi-VN') : 'Không bao giờ'}</span></div>
                         </div>
                     </div>
@@ -193,9 +224,32 @@ const UserDetailsModal: React.FC<{ user: Omit<User, 'password'>, onClose: () => 
                             </div>
                         </div>
                     </div>
+
+                    {isManagedTier && (
+                        <div>
+                            <h4 className="text-sm font-medium text-gray-400 mb-2">API Keys được Quản lý</h4>
+                            <textarea
+                                value={managedKeys}
+                                onChange={(e) => setManagedKeys(e.target.value)}
+                                placeholder="Dán các API key vào đây, mỗi key một dòng."
+                                className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 resize-y focus:ring-2 focus:ring-purple-500 font-mono text-sm"
+                                rows={4}
+                            />
+                        </div>
+                    )}
                 </div>
-                <div className="p-4 bg-gray-900/50 text-right rounded-b-lg">
+                <div className="p-4 bg-gray-900/50 flex justify-end gap-3 items-center rounded-b-lg">
                     <button onClick={onClose} className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500 text-sm">Đóng</button>
+                    {isManagedTier && (
+                        <button 
+                            onClick={handleSaveChanges} 
+                            disabled={isLoading}
+                            className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm flex items-center gap-2 disabled:bg-gray-500"
+                        >
+                            {isLoading && <LoadingSpinner className="h-4 w-4" />}
+                            Lưu API Keys
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
@@ -286,13 +340,34 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
             });
     }, [users, tierFilter, usernameFilter, sortColumn, sortDirection]);
 
-    const handleSaveSubscription = async (id: string, updates: Partial<User>) => {
+    const handleSaveUser = async (id: string, updates: Partial<User>) => {
         try {
            await updateUserSubscription(id, updates);
            onSetNotification({ type: 'success', message: 'Cập nhật người dùng thành công' });
-           getUsers();
+           // Refresh data
+           const usersData = await fetchAllUsers();
+           setUsers(usersData);
+           // Update selected user if it's the one being edited
+           if (selectedUser && selectedUser.id === id) {
+               const updatedSelectedUser = usersData.find(u => u.id === id);
+               if (updatedSelectedUser) {
+                   setSelectedUser(updatedSelectedUser);
+               }
+           }
         } catch (error) {
             onSetNotification({ type: 'error', message: error instanceof Error ? error.message : 'Cập nhật người dùng thất bại' });
+        }
+    };
+
+    const handleDeleteUser = async (id: string, username: string) => {
+        if (window.confirm(`Bạn có chắc chắn muốn xóa người dùng "${username}"? Hành động này không thể hoàn tác.`)) {
+            try {
+                await deleteUserService(id);
+                setUsers(prevUsers => prevUsers.filter(u => u.id !== id));
+                onSetNotification({ type: 'success', message: `Đã xóa người dùng ${username}.` });
+            } catch (error) {
+                onSetNotification({ type: 'error', message: error instanceof Error ? error.message : 'Xóa người dùng thất bại.' });
+            }
         }
     };
     
@@ -355,7 +430,7 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
                     </thead>
                     <tbody className="bg-gray-900 divide-y divide-gray-700">
                         {filteredAndSortedUsers.map(user => (
-                           <UserRow key={user.id} user={user} onSave={handleSaveSubscription} onViewDetails={setSelectedUser} />
+                           <UserRow key={user.id} user={user} onSave={handleSaveUser} onViewDetails={setSelectedUser} onDelete={handleDeleteUser} />
                         ))}
                     </tbody>
                 </table>
@@ -392,7 +467,7 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
                 )}
             </div>
 
-            {selectedUser && <UserDetailsModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+            {selectedUser && <UserDetailsModal user={selectedUser} onClose={() => setSelectedUser(null)} onSave={handleSaveUser} />}
         </div>
     );
 };

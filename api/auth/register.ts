@@ -11,7 +11,7 @@ export default apiHandler({
         }
 
         if (await findUserByUsername(username)) {
-            res.status(409).json({ message: 'Tên đăng nhập đã tồn tại' });
+            res.status(409).json({ message: 'Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.' });
             return;
         }
 

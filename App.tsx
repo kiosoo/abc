@@ -3,21 +3,26 @@ import Header from '@/components/Header';
 import TtsTab from '@/components/TtsTab';
 import AdminTab from '@/components/AdminTab';
 import Login from '@/components/Login';
-import { User, Notification as NotificationType } from '@/types';
+import { User, Notification as NotificationType, ApiKeyEntry } from '@/types';
 import { NotificationContainer } from '@/components/Notification';
 import { fetchCurrentUser, logoutUser } from '@/services/apiService';
 import { TtsIcon, UsersIcon } from '@/components/Icons';
+import { getValidatedApiKeyPool } from '@/utils/apiKeyUtils';
+
 
 const App: React.FC = () => {
     const [user, setUser] = useState<User | null>(null);
     const [activeTab, setActiveTab] = useState('tts');
     const [isCheckingAuth, setIsCheckingAuth] = useState(true);
     const [notifications, setNotifications] = useState<NotificationType[]>([]);
-    const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
+    const [apiKeyPool, setApiKeyPool] = useState<ApiKeyEntry[]>(() => {
+        const storedPool = localStorage.getItem('gemini_api_keys_pool');
+        return storedPool ? getValidatedApiKeyPool(JSON.parse(storedPool)) : [];
+    });
 
     useEffect(() => {
-        localStorage.setItem('gemini_api_key', apiKey);
-    }, [apiKey]);
+        localStorage.setItem('gemini_api_keys_pool', JSON.stringify(apiKeyPool));
+    }, [apiKeyPool]);
 
     const addNotification = (notification: Omit<NotificationType, 'id'>) => {
         setNotifications(prev => [...prev, { ...notification, id: Date.now() }]);
@@ -78,7 +83,8 @@ const App: React.FC = () => {
                 return <TtsTab 
                     onSetNotification={addNotification} 
                     user={user} 
-                    apiKey={apiKey} 
+                    apiKeyPool={apiKeyPool}
+                    setApiKeyPool={setApiKeyPool}
                 />;
         }
     };
@@ -89,8 +95,8 @@ const App: React.FC = () => {
             <Header 
                 user={user} 
                 onLogout={handleLogout}
-                apiKey={apiKey}
-                setApiKey={setApiKey}
+                apiKeyPool={apiKeyPool}
+                setApiKeyPool={setApiKeyPool}
                 onSetNotification={addNotification}
             />
             <main className="container mx-auto p-4 md:p-8">

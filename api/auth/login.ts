@@ -22,9 +22,12 @@ export default apiHandler({
         const ipHeader = req.headers['x-forwarded-for'];
         const ip = Array.isArray(ipHeader) ? ipHeader[0] : (ipHeader?.split(',')[0].trim() || req.socket.remoteAddress);
         
+        const newSessionToken = Date.now().toString(36) + Math.random().toString(36).substring(2);
+
         await updateUser(user.id, {
             lastLoginAt: new Date().toISOString(),
             ipAddress: ip || null,
+            activeSessionToken: newSessionToken,
         });
 
         const updatedUser = await findUserById(user.id);
@@ -45,6 +48,7 @@ export default apiHandler({
         session.createdAt = updatedUser.createdAt;
         session.lastLoginAt = updatedUser.lastLoginAt;
         session.ipAddress = updatedUser.ipAddress;
+        (session as any).activeSessionToken = newSessionToken; // Add token to session
         await session.save();
 
         const { password: _, ...userToSend } = updatedUser;

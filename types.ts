@@ -15,6 +15,9 @@ export enum SubscriptionTier {
   BASIC = 'Basic',
   PRO = 'Pro',
   ULTRA = 'Ultra',
+  STAR = 'Star',
+  SUPER_STAR = 'Super Star',
+  VVIP = 'VVIP',
 }
 
 export interface User {
@@ -29,8 +32,11 @@ export interface User {
   createdAt: string; // ISO 8601 date string
   lastLoginAt: string | null; // ISO 8601 date string
   ipAddress: string | null;
+  activeSessionToken?: string | null;
+  managedApiKeys?: string[];
   usage: {
     ttsCharacters: number;
+    usageDate?: string; // YYYY-MM-DD
   };
 }
 
@@ -82,4 +88,25 @@ export interface VercelResponse extends BaseVercelResponse {
   status(code: number): this;
   json(data: any): this;
   send(body: any): this;
+}
+
+// New types for API Key Pool management
+export interface ApiKeyUsage {
+  count: number;
+  date: string; // YYYY-MM-DD
+}
+
+export interface ApiKeyEntry {
+  key: string;
+  usage: ApiKeyUsage;
+}
+
+export interface Project {
+    id: string;
+    userId: string;
+    name: string;
+    text: string;
+    voice: string;
+    createdAt: string; // ISO 8601 date string
+    updatedAt: string; // ISO 8601 date string
 }

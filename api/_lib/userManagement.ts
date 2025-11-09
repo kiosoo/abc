@@ -1,5 +1,5 @@
 import { createClient, VercelKV } from '@vercel/kv';
-import { User, SubscriptionTier } from './types.js';
+import { User, SubscriptionTier, Project } from './types.js';
 import { ADMIN_USER_SEED } from './users.js';
 
 let kv: VercelKV | null = null;
@@ -38,6 +38,7 @@ function getKv(): VercelKV {
 const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
     if (!rawUser) return null;
     try {
+        const defaultUsage = { ttsCharacters: 0, usageDate: new Date().toISOString().split('T')[0] };
         // Manually construct the user object to ensure all types are correct,
         // preventing crashes from unexpected data types or missing fields.
         const user: User = {
@@ -51,9 +52,11 @@ const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
             createdAt: rawUser.createdAt,
             lastLoginAt: rawUser.lastLoginAt,
             ipAddress: rawUser.ipAddress,
+            activeSessionToken: rawUser.activeSessionToken,
             // Explicitly parse boolean and JSON strings from KV
             isAdmin: String(rawUser.isAdmin).toLowerCase() === 'true',
-            usage: typeof rawUser.usage === 'string' ? JSON.parse(rawUser.usage) : { ttsCharacters: 0 },
+            usage: typeof rawUser.usage === 'string' ? JSON.parse(rawUser.usage) : defaultUsage,
+            managedApiKeys: typeof rawUser.managedApiKeys === 'string' ? JSON.parse(rawUser.managedApiKeys) : [],
         };
         return user;
     } catch (e) {
@@ -110,8 +113,11 @@ export async function createUser(userData: Partial<Omit<User, 'id'>> & Pick<User
         createdAt: now,
         lastLoginAt: now,
         ipAddress: ipAddress,
+        activeSessionToken: null,
+        managedApiKeys: [],
         usage: {
             ttsCharacters: 0,
+            usageDate: new Date().toISOString().split('T')[0],
         },
     };
 
@@ -121,6 +127,7 @@ export async function createUser(userData: Partial<Omit<User, 'id'>> & Pick<User
         ...newUser,
         isAdmin: String(newUser.isAdmin),
         usage: JSON.stringify(newUser.usage),
+        managedApiKeys: JSON.stringify(newUser.managedApiKeys),
     };
 
     await kv.hset(`user:${userId}`, userForKv);
@@ -159,11 +166,17 @@ export async function updateUser(id: string, updates: Partial<Omit<User, 'id' | 
     const updatedData = { ...user, ...updates };
 
     // Explicitly convert complex/boolean types to strings before storing in KV hash.
-    const dataForKv = {
-        ...updatedData,
-        isAdmin: String(updatedData.isAdmin),
-        usage: JSON.stringify(updatedData.usage),
-    };
+    const dataForKv: { [key: string]: any } = { ...updatedData };
+    if (typeof dataForKv.isAdmin !== 'undefined') {
+        dataForKv.isAdmin = String(dataForKv.isAdmin);
+    }
+     if (typeof dataForKv.usage !== 'undefined') {
+        dataForKv.usage = JSON.stringify(dataForKv.usage);
+    }
+    if (typeof dataForKv.managedApiKeys !== 'undefined') {
+        dataForKv.managedApiKeys = JSON.stringify(dataForKv.managedApiKeys);
+    }
+
 
     await kv.hset(`user:${id}`, dataForKv);
 
@@ -175,8 +188,16 @@ export async function logTtsUsage(userId: string, characterCount: number): Promi
     const kv = getKv();
     const user = await findUserById(userId);
     if (user) {
-        const newCount = (user.usage.ttsCharacters || 0) + characterCount;
-        const newUsage = { ttsCharacters: newCount };
+        const todayStr = new Date().toISOString().split('T')[0];
+        let currentUsage = user.usage || { ttsCharacters: 0, usageDate: todayStr };
+        
+        // Reset if it's a new day
+        if (currentUsage.usageDate !== todayStr) {
+            currentUsage = { ttsCharacters: 0, usageDate: todayStr };
+        }
+
+        const newCount = (currentUsage.ttsCharacters || 0) + characterCount;
+        const newUsage = { ...currentUsage, ttsCharacters: newCount, usageDate: todayStr };
         await kv.hset(`user:${userId}`, { usage: JSON.stringify(newUsage) });
     }
 }
@@ -190,5 +211,58 @@ export async function deleteUser(id: string): Promise<boolean> {
     await kv.del(`user:${id}`);
     await kv.del(`username:${user.username}`);
     await kv.srem('users', id);
+    return true;
+}
+
+// --- Project Management Functions ---
+
+const PROJECTS_LIST_KEY = (userId: string) => `projects:${userId}`;
+const PROJECT_KEY = (projectId: string) => `project:${projectId}`;
+
+export async function getProjectsForUser(userId: string): Promise<Project[]> {
+    const kv = getKv();
+    const projectIds = await kv.smembers(PROJECTS_LIST_KEY(userId));
+    if (!projectIds || projectIds.length === 0) return [];
+    
+    const pipeline = kv.pipeline();
+    projectIds.forEach(id => pipeline.hgetall(PROJECT_KEY(id)));
+    const results = await pipeline.exec<Record<string, any>[]>();
+
+    return results.filter(p => p).map(p => p as Project).sort((a,b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+}
+
+export async function createProject(userId: string, data: { name: string, text: string, voice: string }): Promise<Project> {
+    const kv = getKv();
+    const now = new Date().toISOString();
+    const projectId = `proj_${Date.now()}`;
+    
+    const newProject: Project = {
+        id: projectId,
+        userId,
+        name: data.name,
+        text: data.text,
+        voice: data.voice,
+        createdAt: now,
+        updatedAt: now,
+    };
+    
+    await kv.sadd(PROJECTS_LIST_KEY(userId), projectId);
+    // FIX: Cast project object to a type with an index signature to satisfy kv.hset.
+    await kv.hset(PROJECT_KEY(projectId), newProject as any);
+    
+    return newProject;
+}
+
+export async function deleteProject(userId: string, projectId: string): Promise<boolean> {
+    const kv = getKv();
+    const project = await kv.hgetall(PROJECT_KEY(projectId));
+
+    if (!project || project.userId !== userId) {
+        return false; // User does not own this project
+    }
+
+    await kv.del(PROJECT_KEY(projectId));
+    await kv.srem(PROJECTS_LIST_KEY(userId), projectId);
+    
     return true;
 }

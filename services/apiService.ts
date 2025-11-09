@@ -1,14 +1,17 @@
-import { User, BugReport, SubscriptionTier } from '@/types';
+import { User, BugReport, SubscriptionTier, Project } from '@/types';
 
 // This service now exclusively calls API endpoints. No more local simulation.
 
-async function fetcher<T>(url: string, options?: RequestInit): Promise<T> {
+async function fetcher<T>(url: string, options?: RequestInit, responseType: 'json' | 'blob' = 'json'): Promise<T> {
     const res = await fetch(url, options);
-    const data = await res.json();
     if (!res.ok) {
-        throw new Error(data.message || 'Đã xảy ra lỗi API');
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Đã xảy ra lỗi API');
     }
-    return data;
+    if (responseType === 'blob') {
+        return res.blob() as Promise<T>;
+    }
+    return res.json() as Promise<T>;
 }
 
 export const loginUser = (username: string, password: string): Promise<User> => {
@@ -39,11 +42,19 @@ export const fetchAllUsers = (): Promise<Omit<User, 'password'>[]> => {
     return fetcher<Omit<User, 'password'>[]>('/api/users');
 };
 
-export const updateUserSubscription = (id: string, updates: { tier?: SubscriptionTier, subscriptionExpiresAt?: string | null }): Promise<User> => {
+export const updateUserSubscription = (id: string, updates: { tier?: SubscriptionTier, subscriptionExpiresAt?: string | null, managedApiKeys?: string[] }): Promise<User> => {
     return fetcher<User>('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, ...updates }),
+    });
+};
+
+export const deleteUser = (id: string): Promise<void> => {
+    return fetcher<void>('/api/users', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
     });
 };
 
@@ -65,4 +76,34 @@ export const submitBugReport = (message: string): Promise<void> => {
 
 export const fetchBugReports = (): Promise<BugReport[]> => {
     return fetcher<BugReport[]>('/api/bugs');
+};
+
+// --- New Service Functions ---
+
+export const generateManagedSpeech = (text: string, voice: string): Promise<Blob> => {
+    return fetcher<Blob>('/api/tts/managed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice }),
+    }, 'blob');
+};
+
+export const fetchProjects = (): Promise<Project[]> => {
+    return fetcher<Project[]>('/api/projects');
+};
+
+export const saveProject = (projectData: { name: string, text: string, voice: string }): Promise<Project> => {
+    return fetcher<Project>('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(projectData),
+    });
+};
+
+export const deleteProject = (projectId: string): Promise<void> => {
+    return fetcher<void>('/api/projects', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId }),
+    });
 };

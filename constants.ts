@@ -17,13 +17,26 @@ export const DEFAULT_VOICE = 'auto';
 // Increased chunk size to optimize API calls. The model limit is 5000 chars.
 export const LONG_TEXT_CHUNK_SIZE = 4800; // Characters per chunk for TTS
 
-// Rate limit for Gemini API Free tier (15 RPM).
-// This interval is used in the TTS processing loop to avoid exceeding the limit.
-// We calculate the interval (4s) and add a 500ms buffer for safety.
-export const TTS_REQUEST_INTERVAL_MS = (60 / 15) * 1000 + 500; // 4500ms
+// Business rule: Each API key is limited to 15 requests per day for quota calculation.
+export const TTS_DAILY_API_LIMIT = 15;
 
 export const TIER_LIMITS: { [key in SubscriptionTier]: number } = {
   [SubscriptionTier.BASIC]: 1500,
   [SubscriptionTier.PRO]: 6000,
   [SubscriptionTier.ULTRA]: Infinity,
+  // Star gets 2 managed keys: ~140k chars daily limit
+  [SubscriptionTier.STAR]: 140000,
+  // Super Star gets 4 managed keys: ~280k chars daily limit
+  [SubscriptionTier.SUPER_STAR]: 280000,
+  // VVIP gets 10 managed keys: ~700k chars daily limit
+  [SubscriptionTier.VVIP]: 700000,
+};
+
+export const TIER_COLORS: { [key in SubscriptionTier]: string } = {
+    [SubscriptionTier.BASIC]: 'text-gray-400',
+    [SubscriptionTier.PRO]: 'text-cyan-400',
+    [SubscriptionTier.ULTRA]: 'text-teal-400',
+    [SubscriptionTier.STAR]: 'text-blue-400',
+    [SubscriptionTier.SUPER_STAR]: 'text-purple-400',
+    [SubscriptionTier.VVIP]: 'text-yellow-400',
 };
