@@ -1,4 +1,3 @@
-
 // A minimalist WAV file header writer
 // Based on: http://soundfile.sapp.org/doc/WaveFormat/
 // This is sufficient for the PCM data returned by the Gemini API.
@@ -92,6 +91,23 @@ export const createWavBlob = (pcmData: Uint8Array): Blob => {
     wavBytes.set(pcmData, header.length);
 
     return new Blob([wavBytes], { type: 'audio/wav' });
+};
+
+// New function for client-side stitching of raw PCM data
+export const stitchPcmChunks = (pcmChunks: Uint8Array[]): Uint8Array => {
+    if (pcmChunks.length === 0) return new Uint8Array(0);
+    if (pcmChunks.length === 1) return pcmChunks[0];
+
+    const totalLength = pcmChunks.reduce((acc, chunk) => acc + chunk.length, 0);
+    const combinedPcm = new Uint8Array(totalLength);
+
+    let offset = 0;
+    for (const chunk of pcmChunks) {
+        combinedPcm.set(chunk, offset);
+        offset += chunk.length;
+    }
+
+    return combinedPcm;
 };
 
 // FIX: Made function asynchronous to use blob.arrayBuffer() which is async,

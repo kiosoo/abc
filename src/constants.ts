@@ -1,4 +1,3 @@
-
 import { VoiceOption, SubscriptionTier } from './types.js';
 
 export const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
@@ -15,7 +14,8 @@ export const TTS_VOICES: VoiceOption[] = [
 
 export const DEFAULT_VOICE = 'auto';
 
-// Increased chunk size to optimize API calls. The model limit is 5000 chars.
+// Restore the chunk size to 4800 as the new architecture processes audio on the client,
+// bypassing the Vercel KV 10MB limit.
 export const LONG_TEXT_CHUNK_SIZE = 4800; // Characters per chunk for TTS
 
 // Business rule: Each API key is limited to 15 requests per day for quota calculation.

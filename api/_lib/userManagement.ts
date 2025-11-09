@@ -1,4 +1,3 @@
-
 import { createClient, VercelKV } from '@vercel/kv';
 import { User, SubscriptionTier, ManagedApiKeyEntry } from './types.js';
 import { ADMIN_USER_SEED } from './users.js';
@@ -219,23 +218,31 @@ export async function updateUser(id: string, updates: Partial<Omit<User, 'id' | 
         }
     }
 
-    // Special handling for merging managedApiKeys to preserve usage data
+    // FIX: Smarter handling of managedApiKeys
     if (updates.managedApiKeys) {
-        const oldKeysMap = new Map((currentUser.managedApiKeys || []).map(entry => [entry.key, entry.usage]));
         const newKeyList = updates.managedApiKeys;
-        const quotaDayStr = new Date().toISOString().split('T')[0];
+        
+        // If the incoming array contains full ManagedApiKeyEntry objects (from TTS service),
+        // trust it and use it directly.
+        if (newKeyList.length > 0 && typeof newKeyList[0] === 'object') {
+            updatesForKv.managedApiKeys = JSON.stringify(newKeyList);
+        } 
+        // Otherwise, assume it's an array of strings (from Admin UI) and perform the merge.
+        else {
+            const oldKeysMap = new Map((currentUser.managedApiKeys || []).map(entry => [entry.key, entry.usage]));
+            const quotaDayStr = new Date().toISOString().split('T')[0];
 
-        const newManagedApiEntries: ManagedApiKeyEntry[] = newKeyList.map(item => {
-            const key = typeof item === 'string' ? item : item.key;
-            const existingUsage = oldKeysMap.get(key);
-            
-            if (existingUsage) {
-                return { key, usage: existingUsage };
-            } else {
-                return { key, usage: { count: 0, date: quotaDayStr } };
-            }
-        });
-        updatesForKv.managedApiKeys = JSON.stringify(newManagedApiEntries);
+            const newManagedApiEntries: ManagedApiKeyEntry[] = (newKeyList as string[]).map(key => {
+                const existingUsage = oldKeysMap.get(key);
+                
+                if (existingUsage) {
+                    return { key, usage: existingUsage };
+                } else {
+                    return { key, usage: { count: 0, date: quotaDayStr } };
+                }
+            });
+            updatesForKv.managedApiKeys = JSON.stringify(newManagedApiEntries);
+        }
     }
     
     if (Object.keys(updatesForKv).length > 0) {

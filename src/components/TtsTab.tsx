@@ -1,11 +1,10 @@
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-// FIX: Add file extensions to imports to resolve module loading errors.
 import { Notification, User, ApiKeyEntry, SubscriptionTier, LogEntry } from '@/types.ts';
-import { TTS_VOICES, DEFAULT_VOICE, TIER_LIMITS } from '@/constants.ts';
+import { TTS_VOICES, DEFAULT_VOICE, TIER_LIMITS } from '@/constants.js';
 import { ChevronDownIcon, LoadingSpinner, DownloadIcon, ErrorIcon, DocumentTextIcon, SystemIcon, InfoIcon, SuccessIcon } from '@/components/Icons.tsx';
 import { reportTtsUsage } from '@/services/apiService.ts';
 import SubscriptionModal from '@/components/SubscriptionModal.tsx';
+import { decode, createWavBlob, stitchPcmChunks } from '@/utils/audioUtils.ts';
 
 interface TtsTabProps {
     onSetNotification: (notification: Omit<Notification, 'id'>) => void;
@@ -31,7 +30,6 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     const [selectedVoice, setSelectedVoice] = useState(DEFAULT_VOICE);
     const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
     
-    // --- New state for async processing ---
     const [isProcessing, setIsProcessing] = useState(false);
     const [jobId, setJobId] = useState<string | null>(null);
     const [progress, setProgress] = useState(0);
@@ -42,7 +40,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     const [error, setError] = useState<string | null>(null);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const pollingIntervalRef = useRef<number | null>(null);
+    const isCancelledRef = useRef(false);
     
     const isManagedUser = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(user.tier);
     
@@ -51,70 +49,16 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
         setLogs(prev => [...prev, { id: Date.now() + Math.random(), message, type, timestamp }]);
     };
     
-    const resetState = () => {
+    const resetState = useCallback(() => {
         setIsProcessing(false);
         setJobId(null);
         setProgress(0);
         setProgressStatus('');
         setError(null);
         setFinalAudioBlob(null);
-        if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-        }
-    };
-
-    // --- Polling logic for async job ---
-    useEffect(() => {
-        if (!jobId) return;
-
-        pollingIntervalRef.current = window.setInterval(async () => {
-            try {
-                const res = await fetch(`/api/tts?action=status&jobId=${jobId}`);
-                if (!res.ok) {
-                    throw new Error('Không thể kiểm tra trạng thái tác vụ.');
-                }
-                const data = await res.json();
-                
-                const newProgress = data.totalChunks > 0 ? (data.processedChunks / data.totalChunks) * 100 : 0;
-                setProgress(newProgress);
-                setProgressStatus(`Đang xử lý phần ${data.processedChunks} / ${data.totalChunks}...`);
-
-                if (data.status === 'failed') {
-                    setError(data.error || 'Tác vụ thất bại mà không có thông báo lỗi cụ thể.');
-                    addLog(`Thất bại: ${data.error}`, 'error');
-                    resetState();
-                } else if (newProgress >= 100 && data.processedChunks === data.totalChunks) {
-                    addLog('Đã xử lý tất cả các phần. Đang ghép âm thanh...', 'system');
-                    setProgressStatus('Đang hoàn tất...');
-                    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-
-                    // Fetch the final result
-                    const resultRes = await fetch(`/api/tts?action=result&jobId=${jobId}`);
-                    if (!resultRes.ok) {
-                        const errorData = await resultRes.json();
-                        throw new Error(errorData.message || 'Không thể tải xuống kết quả âm thanh cuối cùng.');
-                    }
-                    const blob = await resultRes.blob();
-                    setFinalAudioBlob(blob);
-                    addLog('Âm thanh đã sẵn sàng!', 'success');
-                    setIsProcessing(false);
-                }
-            } catch (e) {
-                const errorMessage = e instanceof Error ? e.message : 'Lỗi không xác định khi thăm dò.';
-                setError(errorMessage);
-                addLog(errorMessage, 'error');
-                resetState();
-            }
-        }, 3000); // Poll every 3 seconds
-
-        return () => {
-            if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current);
-            }
-        };
-    }, [jobId]);
-
+        setLogs([]);
+        isCancelledRef.current = false;
+    }, []);
 
     useEffect(() => {
         if (finalAudioBlob) {
@@ -129,8 +73,9 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     const handleGenerateSpeech = useCallback(async () => {
         resetState();
         setIsProcessing(true);
-        setLogs([]);
         addLog('Bắt đầu quá trình tổng hợp...', 'system');
+
+        let currentJobId: string | null = null;
 
         try {
             if (!isManagedUser) {
@@ -138,6 +83,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                  throw new Error("Tính năng này yêu cầu gói Star trở lên.");
             }
 
+            // 1. Start job and get chunks info
             const startRes = await fetch('/api/tts?action=start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -150,19 +96,69 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             }
 
             const { jobId: newJobId, totalChunks } = await startRes.json();
-            addLog(`Tác vụ đã được tạo với ID: ${newJobId}. Tổng số phần: ${totalChunks}.`, 'info');
-            setProgressStatus(`Đã gửi ${totalChunks} phần để xử lý...`);
+            currentJobId = newJobId; // Store jobId for cleanup
             setJobId(newJobId);
+            addLog(`Tác vụ đã được tạo với ID: ${newJobId}. Tổng số phần: ${totalChunks}.`, 'info');
             await reportTtsUsage(text.length);
+
+            // 2. Process each chunk sequentially on the client
+            const pcmChunks: Uint8Array[] = [];
+            for (let i = 0; i < totalChunks; i++) {
+                if (isCancelledRef.current) {
+                    addLog('Quá trình đã bị hủy.', 'info');
+                    throw new Error('Đã hủy tác vụ.');
+                }
+                
+                setProgressStatus(`Đang xử lý phần ${i + 1} / ${totalChunks}...`);
+                addLog(`Đang tạo âm thanh cho phần ${i + 1}...`, 'system');
+
+                const chunkRes = await fetch('/api/tts?action=processSingleChunk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jobId: newJobId, chunkIndex: i }),
+                });
+
+                if (!chunkRes.ok) {
+                    const errorData = await chunkRes.json();
+                    throw new Error(errorData.message || `Xử lý phần ${i + 1} thất bại.`);
+                }
+
+                const { base64Audio } = await chunkRes.json();
+                pcmChunks.push(decode(base64Audio));
+                setProgress(((i + 1) / totalChunks) * 100);
+            }
+
+            // 3. Stitch audio on the client
+            addLog('Đã xử lý tất cả các phần. Đang ghép âm thanh...', 'system');
+            setProgressStatus('Đang hoàn tất...');
+            const combinedPcm = stitchPcmChunks(pcmChunks);
+            const wavBlob = createWavBlob(combinedPcm);
+            setFinalAudioBlob(wavBlob);
+            addLog('Âm thanh đã sẵn sàng!', 'success');
 
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Đã xảy ra lỗi không xác định.';
             setError(errorMessage);
             addLog(`Thất bại: ${errorMessage}`, 'error');
             onSetNotification({ type: 'error', message: errorMessage });
-            resetState();
+        } finally {
+            setIsProcessing(false);
+            if (currentJobId) {
+                // 4. Cleanup KV data regardless of success or failure
+                addLog('Đang dọn dẹp tài nguyên trên server...', 'system');
+                try {
+                    await fetch('/api/tts?action=cleanup', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ jobId: currentJobId }),
+                    });
+                    addLog('Dọn dẹp hoàn tất.', 'info');
+                } catch (cleanupError) {
+                    addLog('Dọn dẹp tài nguyên thất bại.', 'error');
+                }
+            }
         }
-    }, [text, selectedVoice, onSetNotification, isManagedUser]);
+    }, [text, selectedVoice, onSetNotification, isManagedUser, resetState]);
     
      const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -192,6 +188,15 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     };
+
+    const handleCancel = () => {
+        if (isProcessing) {
+            isCancelledRef.current = true;
+            // The loop in handleGenerateSpeech will catch this and stop
+        } else {
+            resetState();
+        }
+    }
 
     const characterLimit = TIER_LIMITS[user.tier];
 
@@ -260,7 +265,17 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             
             {(isProcessing || finalAudioBlob || error || logs.length > 0) && (
                 <div className="p-6 bg-gray-800/50 border border-gray-700 rounded-lg space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-300">Kết quả & Nhật ký</h3>
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-semibold text-gray-300">Kết quả & Nhật ký</h3>
+                        {(isProcessing || finalAudioBlob || error) && (
+                             <button 
+                                onClick={handleCancel}
+                                className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700"
+                            >
+                                {isProcessing ? 'Hủy' : 'Xóa'}
+                            </button>
+                        )}
+                    </div>
                     {isProcessing && (
                         <div className="space-y-3">
                              <p className="text-sm text-center text-purple-300">{progressStatus}</p>
