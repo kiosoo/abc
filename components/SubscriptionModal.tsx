@@ -137,7 +137,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
         const isCurrentUserTier = userTier === tier;
 
         return (
-            <div className={`flex flex-col rounded-lg p-3 border-2 ${details.style.border} ${details.style.bg} relative`}>
+            <div className={`flex flex-col rounded-lg p-2 border-2 ${details.style.border} ${details.style.bg} relative`}>
                  {details.kind === 'managed' && (
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-purple-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 text-white shadow-lg">
                         <StarIcon className="w-4 h-4" />
@@ -148,7 +148,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                 <p className="text-center text-gray-400 mt-1 text-xs leading-tight">{details.description}</p>
 
                 {/* Price Block */}
-                <div className="my-2 text-center">
+                <div className="my-1 text-center">
                     {tier === SubscriptionTier.BASIC ? (
                         <span className="text-2xl font-extrabold text-white">Miễn phí</span>
                     ) : (
@@ -183,7 +183,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                 </div>
 
 
-                <ul className="space-y-0.5 text-gray-300 text-xs my-2">
+                <ul className="space-y-0.5 text-gray-300 text-xs my-1">
                     {details.features.map((feature, index) => (
                         <li key={index} className="flex items-start">
                             <CheckIcon className="w-4 h-4 text-green-400 mr-2 flex-shrink-0 mt-0.5" />
@@ -228,7 +228,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                     <p className="text-gray-400 mt-1 text-sm">Chọn gói phù hợp nhất với nhu cầu sử dụng của bạn.</p>
                 </div>
 
-                <div className="p-3">
+                <div className="p-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                         <PlanCard tier={SubscriptionTier.BASIC} />
                         <PlanCard tier={SubscriptionTier.PRO} />
@@ -253,7 +253,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                            <strong>Quy tắc Hạn ngạch Gói Được Quản Lý:</strong> Hạn ngạch hàng ngày của bạn sẽ hết khi bạn đạt đến <strong>giới hạn ký tự</strong> HOẶC <strong>số lần tạo âm thanh</strong>, tùy điều kiện nào đến trước. Ví dụ: gói Star có giới hạn 140,000 ký tự và 30 lần tạo âm thanh. Nếu bạn thực hiện 30 yêu cầu nhỏ, hạn ngạch trong ngày sẽ hết ngay cả khi chưa dùng hết giới hạn ký tự.
                         </p>
                         <ul className="list-disc list-inside text-gray-400 space-y-1">
-                            <li>Một API Key Gemini miễn phí cho mô hình TTS (Text-to-Speech) có giới hạn <strong>15 yêu cầu mỗi ngày (RPD)</strong> và tốc độ <strong>3 yêu cầu mỗi phút (RPM)</strong>. Ứng dụng sẽ tự động quản lý giới hạn này cho bạn.</li>
+                            <li>Một API Key có giới hạn, Ứng dụng sẽ tự động quản lý giới hạn này cho bạn.</li>
                             <li>Bạn có thể thêm nhiều key trong phần "Quản lý API Keys" (đối với gói tự quản) để tăng tổng hạn ngạch.</li>
                         </ul>
                     </div>

@@ -62,8 +62,15 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess, onSetNotification }) => {
     return (
         <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
             <div className="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md">
-                <h1 className="text-3xl font-bold text-center mb-6 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-                    {isLoginView ? 'TTS by LÝ VĂN HIỆP ( KIOSOO )' : 'Tạo tài khoản'}
+                <h1 className={`font-bold text-center mb-6 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500 ${isLoginView ? 'text-4xl leading-tight' : 'text-3xl'}`}>
+                    {isLoginView ? (
+                        <>
+                            TTS by LÝ VĂN HIỆP
+                            <span className="block text-2xl mt-1">( KIOSOO )</span>
+                        </>
+                    ) : (
+                        'Tạo tài khoản'
+                    )}
                 </h1>
 
                 {isLoginView ? (
