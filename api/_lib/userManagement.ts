@@ -38,8 +38,16 @@ function getKv(): VercelKV {
 const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
     if (!rawUser) return null;
     try {
-        const defaultUsage = { ttsCharacters: 0, usageDate: new Date().toISOString().split('T')[0] };
+        const defaultUsage = { ttsCharacters: 0, ttsRequests: 0, usageDate: new Date().toISOString().split('T')[0] };
         
+        let parsedUsage = defaultUsage;
+        if (typeof rawUser.usage === 'string') {
+            try {
+                const tempUsage = JSON.parse(rawUser.usage);
+                parsedUsage = { ...defaultUsage, ...tempUsage };
+            } catch (e) { /* use default if parsing fails */ }
+        }
+
         let parsedManagedApiKeys: ManagedApiKeyEntry[] = [];
         const rawKeys = rawUser.managedApiKeys;
         
@@ -83,7 +91,7 @@ const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
             ipAddress: rawUser.ipAddress || null,
             activeSessionToken: rawUser.activeSessionToken || null,
             isAdmin: String(rawUser.isAdmin).toLowerCase() === 'true',
-            usage: typeof rawUser.usage === 'string' ? JSON.parse(rawUser.usage) : defaultUsage,
+            usage: parsedUsage,
             managedApiKeys: parsedManagedApiKeys,
         };
         return user;
@@ -148,6 +156,7 @@ export async function createUser(userData: Partial<Omit<User, 'id'>> & Pick<User
         managedApiKeys: [],
         usage: {
             ttsCharacters: 0,
+            ttsRequests: 0,
             usageDate: new Date().toISOString().split('T')[0],
         },
     };
@@ -259,21 +268,24 @@ export async function updateUser(id: string, updates: Partial<Omit<User, 'id' | 
 }
 
 
-export async function logTtsUsage(userId: string, characterCount: number): Promise<void> {
+export async function logTtsUsage(userId: string, characterCount: number, requestCount: number): Promise<User['usage'] | null> {
     const kv = getKv();
     const user = await findUserById(userId);
     if (user) {
         const todayStr = new Date().toISOString().split('T')[0];
-        let currentUsage = user.usage || { ttsCharacters: 0, usageDate: todayStr };
+        let currentUsage = user.usage || { ttsCharacters: 0, ttsRequests: 0, usageDate: todayStr };
         
         if (currentUsage.usageDate !== todayStr) {
-            currentUsage = { ttsCharacters: 0, usageDate: todayStr };
+            currentUsage = { ttsCharacters: 0, ttsRequests: 0, usageDate: todayStr };
         }
 
         const newCount = (currentUsage.ttsCharacters || 0) + characterCount;
-        const newUsage = { ...currentUsage, ttsCharacters: newCount, usageDate: todayStr };
+        const newRequests = (currentUsage.ttsRequests || 0) + requestCount;
+        const newUsage = { ...currentUsage, ttsCharacters: newCount, ttsRequests: newRequests, usageDate: todayStr };
         await kv.hset(`user:${userId}`, { usage: JSON.stringify(newUsage) });
+        return newUsage;
     }
+    return null;
 }
 
 export async function deleteUser(id: string): Promise<boolean> {

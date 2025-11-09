@@ -1,4 +1,3 @@
-
 // FIX: Add file extension to import to resolve module loading error.
 import { User, SubscriptionTier } from '@/types.ts';
 
@@ -64,10 +63,10 @@ export const deleteUser = (id: string): Promise<void> => {
     });
 };
 
-export const reportTtsUsage = (characterCount: number): Promise<void> => {
-    return fetcher<void>('/api/usage?type=tts', {
+export const reportTtsUsage = (characterCount: number, requestCount: number): Promise<{ message: string, usage: User['usage'] }> => {
+    return fetcher<{ message: string, usage: User['usage'] }>('/api/usage?type=tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ characterCount }),
+        body: JSON.stringify({ characterCount, requestCount }),
     });
 };

@@ -1,4 +1,3 @@
-
 // FIX: Define base interfaces for VercelRequest and VercelResponse to avoid
 // dependency on unresolved 'http' module from Node.js types.
 interface BaseVercelRequest {
@@ -45,6 +44,7 @@ export interface User {
   managedApiKeys?: ManagedApiKeyEntry[];
   usage: {
     ttsCharacters: number;
+    ttsRequests?: number;
     usageDate?: string; // YYYY-MM-DD
   };
 }

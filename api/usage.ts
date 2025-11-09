@@ -1,4 +1,3 @@
-
 import { apiHandler } from './_lib/apiHandler.js';
 import { logTtsUsage } from './_lib/userManagement.js';
 
@@ -12,14 +11,18 @@ export default apiHandler({
                 return;
             }
 
-            const { characterCount } = req.body;
+            const { characterCount, requestCount } = req.body;
             if (typeof characterCount !== 'number' || characterCount < 0) {
                 res.status(400).json({ message: 'Số ký tự không hợp lệ' });
                 return;
             }
+            if (requestCount && (typeof requestCount !== 'number' || requestCount < 0)) {
+                res.status(400).json({ message: 'Số lượng yêu cầu không hợp lệ' });
+                return;
+            }
 
-            await logTtsUsage(session.id, characterCount);
-            res.status(200).json({ message: 'Mức sử dụng đã được ghi nhận' });
+            const newUsage = await logTtsUsage(session.id, characterCount, requestCount || 0);
+            res.status(200).json({ message: 'Mức sử dụng đã được ghi nhận', usage: newUsage });
             return;
         }
 

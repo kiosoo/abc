@@ -1,4 +1,3 @@
-
 // Project cleanup: Removed unused component and API files.
 import React, { useState, useEffect } from 'react';
 // FIX: Add file extensions to imports to resolve module loading errors.
@@ -56,6 +55,16 @@ const App: React.FC = () => {
         setActiveTab('tts');
         addNotification({ type: 'info', message: 'Bạn đã được đăng xuất.' });
     };
+
+    const handleUsageUpdate = (newUsage: User['usage']) => {
+        setUser(prevUser => {
+            if (!prevUser) return null;
+            return {
+                ...prevUser,
+                usage: newUsage,
+            };
+        });
+    };
     
     if (isCheckingAuth) {
         return <div className="bg-gray-900 min-h-screen flex items-center justify-center text-white">Đang tải...</div>;
@@ -88,6 +97,7 @@ const App: React.FC = () => {
                     user={user} 
                     apiKeyPool={apiKeyPool}
                     setApiKeyPool={setApiKeyPool}
+                    onUsageUpdate={handleUsageUpdate}
                 />;
         }
     };

@@ -23,7 +23,7 @@ export const TTS_DAILY_API_LIMIT = 15;
 
 export const TIER_LIMITS: { [key in SubscriptionTier]: number } = {
   [SubscriptionTier.BASIC]: 1500,
-  [SubscriptionTier.PRO]: 6000,
+  [SubscriptionTier.PRO]: 1500,
   // Ultra is a self-managed tier with no hard limit per submission.
   [SubscriptionTier.ULTRA]: Infinity,
   // Star gets 2 managed keys: ~140k chars daily limit
@@ -32,6 +32,15 @@ export const TIER_LIMITS: { [key in SubscriptionTier]: number } = {
   [SubscriptionTier.SUPER_STAR]: 280000,
   // VVIP gets 10 managed keys: ~700k chars daily limit
   [SubscriptionTier.VVIP]: 700000,
+};
+
+export const TIER_REQUEST_LIMITS: { [key in SubscriptionTier]: number } = {
+  [SubscriptionTier.BASIC]: Infinity,
+  [SubscriptionTier.PRO]: Infinity,
+  [SubscriptionTier.ULTRA]: Infinity,
+  [SubscriptionTier.STAR]: 30,
+  [SubscriptionTier.SUPER_STAR]: 60,
+  [SubscriptionTier.VVIP]: 150,
 };
 
 export const TIER_COLORS: { [key in SubscriptionTier]: string } = {

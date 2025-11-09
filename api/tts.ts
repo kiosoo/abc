@@ -87,40 +87,56 @@ async function handleProcessSingleChunk(req, res, session) {
             }
             return entry;
         });
+        
+        if (keyPool.length === 0) {
+            res.status(500).json({ message: 'Không có API key nào được cấu hình cho người dùng này.' });
+            return;
+        }
+
         let audioBase64 = null;
         let success = false;
-        let errorMsg = 'Hết hạn ngạch trên tất cả các key.';
+        let errorMsg = 'Hết hạn ngạch trên tất cả các key hoặc đã xảy ra lỗi.';
+        
+        // Smarter key selection for parallel processing:
+        // Start checking from an index based on the chunk number to distribute load.
+        const startIndex = chunkIndex % keyPool.length;
+        
         for (let i = 0; i < keyPool.length; i++) {
-            const keyEntry = keyPool[i];
+            const keyIndex = (startIndex + i) % keyPool.length;
+            const keyEntry = keyPool[keyIndex];
+
             if (keyEntry.usage.count < TTS_DAILY_API_LIMIT) {
                 try {
                     const result = await generateSpeech(keyEntry.key, chunkText as string, jobData.voice as string);
                     audioBase64 = result.base64Audio;
-                    keyPool[i].usage.count++;
+                    keyPool[keyIndex].usage.count++; // Increment usage
                     success = true;
-                    break;
+                    break; // Found a working key, exit the loop
                 } catch (e) {
                     if (e instanceof GeminiApiError && e.isQuotaError) {
-                        keyPool[i].usage.count = TTS_DAILY_API_LIMIT;
+                        keyPool[keyIndex].usage.count = TTS_DAILY_API_LIMIT; // Mark as exhausted for today
                     }
                     errorMsg = e instanceof Error ? e.message : String(e);
                     console.error(`Key ...${keyEntry.key.slice(-4)} failed for job ${jobId}, chunk ${chunkIndex}: ${errorMsg}`);
+                    // Don't break; continue to try the next key
                 }
             }
         }
 
+        // Update the user's key usage state in the database.
+        // NOTE: In a highly concurrent scenario, this read-modify-write operation
+        // could have a race condition. For this app's scale, the risk is acceptable.
         await updateUser(user.id, { managedApiKeys: keyPool });
         
         if (success && audioBase64) {
              // Return the audio directly to the client
-            // FIX: Correctly reference the 'audioBase64' variable in the response object.
-            res.status(200).json({ base64Audio: audioBase64 });
+            res.status(200).json({ base64Audio: audioBase64, chunkIndex: chunkIndex });
         } else {
-            res.status(500).json({ message: `Xử lý chunk ${chunkIndex} thất bại: ${errorMsg}` });
+            res.status(500).json({ message: `Xử lý chunk ${chunkIndex} thất bại: ${errorMsg}`, chunkIndex: chunkIndex });
         }
     } catch (error) {
         const message = error instanceof Error ? error.message : "Lỗi worker không xác định.";
-        res.status(500).json({ message });
+        res.status(500).json({ message, chunkIndex: chunkIndex });
     }
 }
 
