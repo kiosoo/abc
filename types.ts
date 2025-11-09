@@ -20,6 +20,14 @@ export enum SubscriptionTier {
   VVIP = 'VVIP',
 }
 
+export interface ManagedApiKeyEntry {
+  key: string;
+  usage: {
+    count: number;
+    date: string; // YYYY-MM-DD
+  };
+}
+
 export interface User {
   id: string;
   username: string;
@@ -33,7 +41,7 @@ export interface User {
   lastLoginAt: string | null; // ISO 8601 date string
   ipAddress: string | null;
   activeSessionToken?: string | null;
-  managedApiKeys?: string[];
+  managedApiKeys?: ManagedApiKeyEntry[];
   usage: {
     ttsCharacters: number;
     usageDate?: string; // YYYY-MM-DD

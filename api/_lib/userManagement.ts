@@ -1,5 +1,5 @@
 import { createClient, VercelKV } from '@vercel/kv';
-import { User, SubscriptionTier, Project } from './types.js';
+import { User, SubscriptionTier, Project, ManagedApiKeyEntry } from './types.js';
 import { ADMIN_USER_SEED } from './users.js';
 
 let kv: VercelKV | null = null;
@@ -40,25 +40,36 @@ const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
     try {
         const defaultUsage = { ttsCharacters: 0, usageDate: new Date().toISOString().split('T')[0] };
         
-        // Robust parsing for managedApiKeys to handle potential auto-parsing by the KV client.
-        let parsedManagedApiKeys: string[] = [];
+        let parsedManagedApiKeys: ManagedApiKeyEntry[] = [];
         const rawKeys = rawUser.managedApiKeys;
+        
         if (typeof rawKeys === 'string') {
             try {
                 const parsed = JSON.parse(rawKeys);
                 if (Array.isArray(parsed)) {
-                    parsedManagedApiKeys = parsed.filter(item => typeof item === 'string');
+                    // Check if it's the old format (string[]) or new format (ManagedApiKeyEntry[])
+                    if (parsed.length > 0 && typeof parsed[0] === 'string') {
+                        // Old format: Convert string[] to ManagedApiKeyEntry[]
+                        const quotaDayStr = new Date().toISOString().split('T')[0];
+                        parsedManagedApiKeys = parsed.map(key => ({
+                            key,
+                            usage: { count: 0, date: quotaDayStr }
+                        }));
+                    } else if (parsed.length > 0 && typeof parsed[0] === 'object') {
+                        // New format, just validate it
+                        parsedManagedApiKeys = parsed.filter(item => typeof item.key === 'string' && typeof item.usage === 'object');
+                    }
                 }
             } catch (e) {
                 console.warn('Could not parse managedApiKeys from string, defaulting to empty array.', rawKeys);
             }
         } else if (Array.isArray(rawKeys)) {
-            // Handle case where @vercel/kv might have auto-parsed the JSON string into an array.
-            parsedManagedApiKeys = rawKeys.filter(item => typeof item === 'string');
+            // Handle case where @vercel/kv might have auto-parsed the JSON string.
+             if (rawKeys.length > 0 && typeof rawKeys[0] === 'object') {
+                parsedManagedApiKeys = rawKeys.filter(item => typeof item.key === 'string' && typeof item.usage === 'object');
+             }
         }
 
-        // Manually construct the user object to ensure all types are correct,
-        // preventing crashes from unexpected data types or missing fields.
         const user: User = {
             id: rawUser.id,
             username: rawUser.username,
@@ -71,7 +82,6 @@ const parseUserFromKv = (rawUser: Record<string, any> | null): User | null => {
             lastLoginAt: rawUser.lastLoginAt || null,
             ipAddress: rawUser.ipAddress || null,
             activeSessionToken: rawUser.activeSessionToken || null,
-            // Explicitly parse boolean and JSON strings from KV
             isAdmin: String(rawUser.isAdmin).toLowerCase() === 'true',
             usage: typeof rawUser.usage === 'string' ? JSON.parse(rawUser.usage) : defaultUsage,
             managedApiKeys: parsedManagedApiKeys,
@@ -95,7 +105,6 @@ export const ensureAdminExists = async () => {
         }
     } catch (error) {
         console.error("KV Error: Failed to ensure admin user exists. This might be a transient connection issue.", error);
-        // We throw here so the calling handler can catch it and return a proper error response.
         throw new Error("Failed to verify system admin user. Database might be unreachable.");
     }
 };
@@ -143,8 +152,6 @@ export async function createUser(userData: Partial<Omit<User, 'id'>> & Pick<User
         },
     };
 
-    // Explicitly convert complex/boolean types to strings before storing in KV hash.
-    // This prevents data type mismatches between the application and the database.
     const userForKv: Record<string, any> = {
         ...newUser,
         isAdmin: String(newUser.isAdmin),
@@ -152,7 +159,6 @@ export async function createUser(userData: Partial<Omit<User, 'id'>> & Pick<User
         managedApiKeys: JSON.stringify(newUser.managedApiKeys),
     };
     
-    // Sanitize null values before sending to KV to prevent "ERR null args" error.
     for (const key in userForKv) {
         if (userForKv[key] === null) {
             delete userForKv[key];
@@ -181,62 +187,69 @@ export async function getAllUsers(): Promise<Omit<User, 'password'>[]> {
         .map(({ password, ...user }) => user);
 }
 
-export async function updateUser(id: string, updates: Partial<Omit<User, 'id' | 'password'>>): Promise<Omit<User, 'password'> | null> {
+export async function updateUser(id: string, updates: Partial<Omit<User, 'id' | 'password'>> & { managedApiKeys?: string[] | ManagedApiKeyEntry[] }): Promise<Omit<User, 'password'> | null> {
     const kv = getKv();
-
-    // First, verify the user exists to prevent operating on non-existent records.
-    const user = await findUserById(id);
-    if (!user) {
+    const currentUser = await findUserById(id);
+    if (!currentUser) {
         return null;
     }
     
-    // Business rule: prevent de-admining the main admin account.
-    if (user.username === 'admin' && updates.isAdmin === false) {
+    if (currentUser.username === 'admin' && updates.isAdmin === false) {
         return null;
     }
+    
+    const updatesForKv: { [key: string]: any } = {};
 
-    const updatesForKv: { [key: string]: string | number | boolean } = {};
-
-    // Iterate over the provided updates to process them for KV storage.
+    // Process all updates except for managedApiKeys, which needs special handling
     for (const key in updates) {
-        if (Object.prototype.hasOwnProperty.call(updates, key)) {
+        if (key !== 'managedApiKeys' && Object.prototype.hasOwnProperty.call(updates, key)) {
             const value = updates[key as keyof typeof updates];
-
             if (value === null) {
-                // A `null` value from the client signifies deletion of the field.
                 await kv.hdel(`user:${id}`, key);
             } else if (value !== undefined) {
-                // For any other non-undefined value, format it and add to our update object.
-                if (key === 'isAdmin') {
+                 if (key === 'isAdmin') {
                     updatesForKv[key] = String(value);
-                } else if (key === 'usage' || key === 'managedApiKeys') {
+                } else if (key === 'usage') {
                     updatesForKv[key] = JSON.stringify(value);
                 } else {
-                    // Primitive values can be set directly.
-                    updatesForKv[key] = value as any;
+                    updatesForKv[key] = value;
                 }
             }
         }
     }
 
-    // If there are any non-null fields to update, execute a single `hset` command.
+    // Special handling for merging managedApiKeys to preserve usage data
+    if (updates.managedApiKeys) {
+        const oldKeysMap = new Map((currentUser.managedApiKeys || []).map(entry => [entry.key, entry.usage]));
+        const newKeyList = updates.managedApiKeys;
+        const quotaDayStr = new Date().toISOString().split('T')[0];
+
+        const newManagedApiEntries: ManagedApiKeyEntry[] = newKeyList.map(item => {
+            const key = typeof item === 'string' ? item : item.key;
+            const existingUsage = oldKeysMap.get(key);
+            
+            if (existingUsage) {
+                return { key, usage: existingUsage };
+            } else {
+                return { key, usage: { count: 0, date: quotaDayStr } };
+            }
+        });
+        updatesForKv.managedApiKeys = JSON.stringify(newManagedApiEntries);
+    }
+    
     if (Object.keys(updatesForKv).length > 0) {
         await kv.hset(`user:${id}`, updatesForKv);
     }
     
-    // CRITICAL: Fetch the user again from the database after all updates.
-    // This ensures the returned object is a true representation of the stored state,
-    // guaranteeing consistency between the backend and the frontend.
     const updatedUserFromDb = await findUserById(id);
     if (!updatedUserFromDb) {
-        // This should not happen if the user existed initially, but is a safeguard.
         throw new Error("Failed to retrieve user after update.");
     }
     
-    // Omit password before returning.
     const { password, ...userToReturn } = updatedUserFromDb;
     return userToReturn;
 }
+
 
 export async function logTtsUsage(userId: string, characterCount: number): Promise<void> {
     const kv = getKv();
@@ -245,7 +258,6 @@ export async function logTtsUsage(userId: string, characterCount: number): Promi
         const todayStr = new Date().toISOString().split('T')[0];
         let currentUsage = user.usage || { ttsCharacters: 0, usageDate: todayStr };
         
-        // Reset if it's a new day
         if (currentUsage.usageDate !== todayStr) {
             currentUsage = { ttsCharacters: 0, usageDate: todayStr };
         }

@@ -23,6 +23,7 @@ export const TTS_DAILY_API_LIMIT = 15;
 export const TIER_LIMITS: { [key in SubscriptionTier]: number } = {
   [SubscriptionTier.BASIC]: 1500,
   [SubscriptionTier.PRO]: 6000,
+  // Ultra is a self-managed tier with no hard limit per submission.
   [SubscriptionTier.ULTRA]: Infinity,
   // Star gets 2 managed keys: ~140k chars daily limit
   [SubscriptionTier.STAR]: 140000,

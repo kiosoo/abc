@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { User, Notification, SubscriptionTier, BugReport } from '@/types';
+import { User, Notification, SubscriptionTier, BugReport, ManagedApiKeyEntry } from '@/types';
 import { LoadingSpinner, ArrowUpIcon, ArrowDownIcon, ChevronDownIcon } from '@/components/Icons';
 import { fetchAllUsers, updateUserSubscription, fetchBugReports, deleteUser as deleteUserService } from '@/services/apiService';
-import { TIER_LIMITS, TIER_COLORS } from '@/constants';
+import { TIER_LIMITS, TIER_COLORS, TTS_DAILY_API_LIMIT } from '@/constants';
+
+// FIX: Define a specific type for the user update payload to ensure type safety.
+type UserUpdatePayload = {
+    tier?: SubscriptionTier;
+    subscriptionExpiresAt?: string | null;
+    managedApiKeys?: string[];
+};
 
 const timeAgo = (dateString: string | null): string => {
     if (!dateString) return 'Chưa có';
@@ -114,12 +121,13 @@ const formatDateForInput = (isoDate: string | null) => {
 const UserDetailsModal: React.FC<{ 
     user: Omit<User, 'password'>;
     onClose: () => void;
-    onSave: (id: string, updates: Partial<User>) => Promise<void>;
+    // FIX: Use the specific payload type for the onSave handler.
+    onSave: (id: string, updates: UserUpdatePayload) => Promise<void>;
     isSaving: boolean;
 }> = ({ user, onClose, onSave, isSaving }) => {
     const [tier, setTier] = useState(user.tier);
     const [expiresAt, setExpiresAt] = useState(formatDateForInput(user.subscriptionExpiresAt));
-    const [managedKeys, setManagedKeys] = useState((user.managedApiKeys || []).join('\n'));
+    const [managedKeys, setManagedKeys] = useState((user.managedApiKeys?.map(entry => entry.key) || []).join('\n'));
     const [isEditingKeys, setIsEditingKeys] = useState(false);
 
     const isPaidTier = useMemo(() => tier !== SubscriptionTier.BASIC, [tier]);
@@ -128,7 +136,7 @@ const UserDetailsModal: React.FC<{
     useEffect(() => {
         setTier(user.tier);
         setExpiresAt(formatDateForInput(user.subscriptionExpiresAt));
-        setManagedKeys((user.managedApiKeys || []).join('\n'));
+        setManagedKeys((user.managedApiKeys?.map(entry => entry.key) || []).join('\n'));
         const shouldEdit = isManagedTier && (!user.managedApiKeys || user.managedApiKeys.length === 0);
         setIsEditingKeys(shouldEdit);
     }, [user, isManagedTier]);
@@ -145,7 +153,7 @@ const UserDetailsModal: React.FC<{
 
     const handleCancelEditKeys = () => {
         setIsEditingKeys(false);
-        setManagedKeys((user.managedApiKeys || []).join('\n'));
+        setManagedKeys((user.managedApiKeys?.map(entry => entry.key) || []).join('\n'));
     };
     
     const limit = TIER_LIMITS[tier];
@@ -153,10 +161,11 @@ const UserDetailsModal: React.FC<{
     
     const isChanged = tier !== user.tier ||
                       expiresAt !== formatDateForInput(user.subscriptionExpiresAt) ||
-                      managedKeys !== (user.managedApiKeys || []).join('\n');
+                      managedKeys !== (user.managedApiKeys?.map(entry => entry.key) || []).join('\n');
 
     const handleSaveChanges = async () => {
-        const updates: Partial<User> = {};
+        // FIX: Use the specific payload type for the updates object.
+        const updates: UserUpdatePayload = {};
         
         if (tier !== user.tier) updates.tier = tier;
 
@@ -165,8 +174,10 @@ const UserDetailsModal: React.FC<{
             updates.subscriptionExpiresAt = newExpiresAt;
         }
         
-        if (managedKeys !== (user.managedApiKeys || []).join('\n')) {
-            updates.managedApiKeys = managedKeys.split('\n').map(k => k.trim()).filter(Boolean);
+        const newKeyList = managedKeys.split('\n').map(k => k.trim()).filter(Boolean);
+        if (JSON.stringify(newKeyList) !== JSON.stringify(user.managedApiKeys?.map(e => e.key) || [])) {
+             // FIX: Assigning a string[] is now valid due to the UserUpdatePayload type.
+             updates.managedApiKeys = newKeyList;
         }
 
         if (Object.keys(updates).length > 0) {
@@ -234,7 +245,18 @@ const UserDetailsModal: React.FC<{
 
                     {isManagedTier && (
                         <div>
-                            <h4 className="text-sm font-medium text-gray-400 mb-2">API Keys được Quản lý</h4>
+                            <div className="flex justify-between items-center mb-2">
+                                <h4 className="text-sm font-medium text-gray-400">API Keys được Quản lý ({user.managedApiKeys?.length || 0})</h4>
+                                {!isEditingKeys && (
+                                     <button 
+                                        onClick={() => setIsEditingKeys(true)} 
+                                        className="px-3 py-1 text-xs bg-gray-600 text-white rounded-md hover:bg-gray-500"
+                                        disabled={isSaving}
+                                    >
+                                        Thay đổi
+                                    </button>
+                                )}
+                            </div>
                              {isEditingKeys ? (
                                 <>
                                     <textarea
@@ -246,7 +268,7 @@ const UserDetailsModal: React.FC<{
                                         disabled={isSaving}
                                     />
                                     <div className="flex justify-between items-center">
-                                        <p className="text-xs text-gray-500 mt-1">Việc lưu sẽ ghi đè toàn bộ danh sách key hiện có.</p>
+                                        <p className="text-xs text-gray-500 mt-1">Lưu sẽ hợp nhất danh sách, giữ lại dữ liệu sử dụng của các key cũ.</p>
                                         {(user.managedApiKeys && user.managedApiKeys.length > 0) && (
                                             <button 
                                                 onClick={handleCancelEditKeys} 
@@ -259,18 +281,17 @@ const UserDetailsModal: React.FC<{
                                     </div>
                                 </>
                             ) : (
-                                <div className="bg-gray-900/50 p-3 rounded-md border border-gray-600 flex justify-between items-center">
-                                    <div>
-                                        <p className="font-semibold text-white">Các Keys đang hoạt động ({user.managedApiKeys?.length || 0})</p>
-                                        <p className="text-xs text-gray-400">Hệ thống sẽ tự động sử dụng các key này.</p>
-                                    </div>
-                                    <button 
-                                        onClick={() => setIsEditingKeys(true)} 
-                                        className="px-3 py-1 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-500"
-                                        disabled={isSaving}
-                                    >
-                                        Thay đổi
-                                    </button>
+                                <div className="bg-gray-900/50 p-3 rounded-md border border-gray-600 space-y-2">
+                                    {(user.managedApiKeys && user.managedApiKeys.length > 0) ? (
+                                        user.managedApiKeys.map(entry => (
+                                            <div key={entry.key} className="flex items-center justify-between text-xs">
+                                                <span className="font-mono text-gray-300"><span className="text-cyan-400">...</span>{entry.key.slice(-4)}</span>
+                                                <span className="font-semibold text-gray-400">Đã dùng: {entry.usage.count}/{TTS_DAILY_API_LIMIT}</span>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <p className="text-xs text-gray-500 text-center">Chưa có key nào được cấu hình.</p>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -378,7 +399,8 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
             });
     }, [users, tierFilter, usernameFilter, sortColumn, sortDirection]);
 
-    const handleSaveUser = async (id: string, updates: Partial<User>) => {
+    // FIX: Update the 'updates' parameter to use the specific payload type.
+    const handleSaveUser = async (id: string, updates: UserUpdatePayload) => {
         setIsSaving(true);
         try {
            const updatedUser = await updateUserSubscription(id, updates);

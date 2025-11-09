@@ -53,10 +53,11 @@ const tierDetails = {
         discount: 'GIẢM 34%',
         description: 'Giải pháp toàn diện cho doanh nghiệp và người dùng chuyên nghiệp.',
         limit: TIER_LIMITS[SubscriptionTier.ULTRA],
-         features: [
+        features: [
             'Yêu cầu API Key Gemini riêng',
-            'Không giới hạn ký tự nhập liệu',
-            'Truy cập sớm các tính năng mới',
+            'Giới hạn ký tự nhập liệu không giới hạn',
+            'Tất cả tính năng của gói Pro',
+            'Hỗ trợ ưu tiên cao nhất',
         ],
         style: {
             bg: 'bg-teal-900/50',
@@ -177,6 +178,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                         </>
                     ) : tier !== SubscriptionTier.BASIC ? (
                          <>
+                            {/* @ts-ignore */}
                             <span className="text-base font-bold text-white">{details.limit === Infinity ? 'Vô hạn' : details.limit.toLocaleString()}</span>
                             <span className="block text-xs font-medium text-gray-400"> ký tự / lần nhập</span>
                         </>
@@ -251,7 +253,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                            <strong>Đối với các gói Star, Super Star & VVIP:</strong> Giới hạn ký tự áp dụng cho tổng số lượng bạn có thể xử lý trong một ngày.
                         </p>
                         <p className="text-yellow-300/80 mb-2">
-                           <strong>Lưu ý quan trọng:</strong> Ngoài giới hạn ký tự, các gói được quản lý cũng bị giới hạn bởi số lần tạo âm thanh (30 lần/ngày cho Star, 60 cho Super Star, 150 cho VVIP). Hạn ngạch của bạn sẽ hết khi một trong hai giới hạn này được đạt tới trước. Điều này có nghĩa là nếu bạn thực hiện nhiều yêu cầu nhỏ, bạn có thể hết hạn ngạch số lần gọi trước khi hết hạn ngạch ký tự.
+                           <strong>Quy tắc Hạn ngạch Gói Được Quản Lý:</strong> Hạn ngạch hàng ngày của bạn sẽ hết khi bạn đạt đến <strong>giới hạn ký tự</strong> HOẶC <strong>số lần tạo âm thanh</strong>, tùy điều kiện nào đến trước. Ví dụ: gói Star có giới hạn 140,000 ký tự và 30 lần tạo âm thanh. Nếu bạn thực hiện 30 yêu cầu nhỏ, hạn ngạch trong ngày sẽ hết ngay cả khi chưa dùng hết giới hạn ký tự.
                         </p>
                         <ul className="list-disc list-inside text-gray-400 space-y-1">
                             <li>Một API Key Gemini miễn phí cho mô hình TTS (Text-to-Speech) có giới hạn <strong>15 yêu cầu mỗi ngày (RPD)</strong> và tốc độ <strong>3 yêu cầu mỗi phút (RPM)</strong>. Ứng dụng sẽ tự động quản lý giới hạn này cho bạn.</li>
