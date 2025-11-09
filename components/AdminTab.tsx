@@ -357,7 +357,7 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
            onSetNotification({ type: 'success', message: 'Cập nhật người dùng thành công' });
            
            setUsers(prevUsers => 
-               prevUsers.map(u => u.id === id ? { ...u, ...updatedUser } : u)
+               prevUsers.map(u => (u.id === id ? updatedUser : u))
            );
 
         } catch (error) {
