@@ -18,6 +18,10 @@ export const generateSpeech = async (
     try {
         const ai = new GoogleGenAI({ apiKey });
         
+        // Handle the 'auto' voice which is a UI-only value.
+        // The API requires a specific voice name. 'Kore' is a good default.
+        const effectiveVoice = (voice && voice.toLowerCase() !== 'auto') ? voice : 'Kore';
+
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
             contents: [{ parts: [{ text }] }],
@@ -25,7 +29,7 @@ export const generateSpeech = async (
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
                     voiceConfig: {
-                        prebuiltVoiceConfig: { voiceName: voice },
+                        prebuiltVoiceConfig: { voiceName: effectiveVoice },
                     },
                 },
             },

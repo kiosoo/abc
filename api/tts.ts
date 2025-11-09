@@ -20,25 +20,25 @@ export default async function ttsHandler(req: VercelRequest, res: VercelResponse
             return res.status(500).json({ message: 'API key chưa được cấu hình trên máy chủ.' });
         }
         
-        // FIX: Initialize with named apiKey parameter.
         const ai = new GoogleGenAI({ apiKey });
 
-        // FIX: Use generateContent for TTS with correct model and config.
+        // Handle the 'auto' voice which is a UI-only value.
+        // The API requires a specific voice name. 'Kore' is a good default.
+        const effectiveVoice = (voice && voice.toLowerCase() !== 'auto') ? voice : 'Kore';
+
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
             contents: [{ parts: [{ text }] }],
             config: {
-                // FIX: responseModalities must be an array with a single AUDIO element.
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
                     voiceConfig: {
-                        prebuiltVoiceConfig: { voiceName: voice || 'Kore' },
+                        prebuiltVoiceConfig: { voiceName: effectiveVoice },
                     },
                 },
             },
         });
 
-        // FIX: Correctly extract base64 audio data from the response.
         const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         if (!base64Audio) {
             return res.status(500).json({ message: 'Không thể tạo âm thanh từ API.' });
