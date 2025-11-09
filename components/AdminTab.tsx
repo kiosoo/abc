@@ -27,58 +27,35 @@ const DashboardMetrics: React.FC<{ users: Omit<User, 'password'>[] }> = ({ users
         yesterday.setDate(yesterday.getDate() - 1);
         return users.filter(user => user.lastLoginAt && new Date(user.lastLoginAt) > yesterday).length;
     }, [users]);
-    
-    const chartData = useMemo(() => {
-        const counts = Array(7).fill(0);
-        const labels = Array(7).fill('');
+
+    const { newUsersLast7Days, newUsersToday } = useMemo(() => {
         const today = new Date();
-        today.setHours(23, 59, 59, 999);
+        today.setHours(0, 0, 0, 0);
 
-        for (let i = 0; i < 7; i++) {
-            const d = new Date(today);
-            d.setDate(d.getDate() - i);
-            labels[6-i] = d.toLocaleDateString('vi-VN', { weekday: 'short' });
-        }
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
 
-        users.forEach(user => {
-            const createdAt = new Date(user.createdAt);
-            const diffTime = today.getTime() - createdAt.getTime();
-            const diffDays = Math.floor(diffTime / (1000 * 3600 * 24));
-            if (diffDays >= 0 && diffDays < 7) {
-                counts[6 - diffDays]++;
-            }
-        });
+        const newLast7 = users.filter(user => new Date(user.createdAt) >= sevenDaysAgo).length;
+        const newToday = users.filter(user => new Date(user.createdAt) >= today).length;
         
-        return { counts, labels };
+        return { newUsersLast7Days: newLast7, newUsersToday: newToday };
     }, [users]);
     
-    const maxCount = Math.max(...chartData.counts, 1);
-
     return (
         <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700 col-span-1">
+            <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700">
                 <h3 className="text-gray-400 text-sm font-medium">Tổng người dùng</h3>
                 <p className="text-3xl font-bold text-white mt-1">{totalUsers}</p>
             </div>
-            <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700 col-span-1">
+            <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700">
                 <h3 className="text-gray-400 text-sm font-medium">Hoạt động trong 24h</h3>
                 <p className="text-3xl font-bold text-white mt-1">{activeUsersLast24h}</p>
             </div>
-            <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700 col-span-1 md:col-span-3">
-                <h3 className="text-gray-400 text-sm font-medium mb-4">Người dùng mới trong 7 ngày qua</h3>
-                <div className="flex justify-between items-end h-32 gap-2">
-                    {chartData.counts.map((count, index) => (
-                         <div key={index} className="flex-1 flex flex-col items-center justify-end">
-                             <div className="text-white text-xs font-bold">{count}</div>
-                             <div 
-                                className="w-full bg-purple-500 hover:bg-purple-400 rounded-t-sm transition-all"
-                                style={{ height: `${(count / maxCount) * 100}%` }}
-                                title={`${chartData.labels[index]}: ${count} người dùng mới`}
-                             ></div>
-                             <div className="text-gray-500 text-xs mt-1">{chartData.labels[index]}</div>
-                         </div>
-                    ))}
-                </div>
+             <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700">
+                <h3 className="text-gray-400 text-sm font-medium">Người dùng mới (7 ngày)</h3>
+                <p className="text-3xl font-bold text-white mt-1">{newUsersLast7Days}</p>
+                {newUsersToday > 0 && <p className="text-sm text-green-400 font-medium mt-1">Hôm nay: +{newUsersToday}</p>}
             </div>
         </div>
     );
@@ -89,9 +66,10 @@ interface UserRowProps {
     onSave: (id: string, updates: Partial<User>) => void;
     onViewDetails: (user: Omit<User, 'password'>) => void;
     onDelete: (id: string, username: string) => void;
+    isSaving: boolean;
 }
 
-const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete }) => {
+const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete, isSaving }) => {
     const [tier, setTier] = useState(user.tier);
     
     const formatDateForInput = (isoDate: string | null) => {
@@ -128,7 +106,7 @@ const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete
                     value={tier} 
                     onChange={e => setTier(e.target.value as SubscriptionTier)}
                     className="bg-gray-700 border border-gray-600 rounded-md p-1"
-                    disabled={user.isAdmin}
+                    disabled={user.isAdmin || isSaving}
                 >
                     {Object.values(SubscriptionTier).map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
@@ -139,7 +117,7 @@ const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete
                     value={expiresAt}
                     onChange={(e) => setExpiresAt(e.target.value)}
                     className="w-40 bg-gray-700 border border-gray-600 rounded-md p-1"
-                    disabled={user.isAdmin}
+                    disabled={user.isAdmin || isSaving}
                 />
             </td>
             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 font-mono">{user.usage.ttsCharacters.toLocaleString()}</td>
@@ -153,10 +131,10 @@ const UserRow: React.FC<UserRowProps> = ({ user, onSave, onViewDetails, onDelete
                 </button>
                 <button
                     onClick={handleSave}
-                    disabled={!isChanged}
-                    className="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                    disabled={!isChanged || isSaving}
+                    className="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed min-w-[50px] flex justify-center items-center"
                 >
-                    Lưu
+                    {isSaving ? <LoadingSpinner className="h-4 w-4" /> : 'Lưu'}
                 </button>
                 {!user.isAdmin && (
                     <button
@@ -182,7 +160,6 @@ const UserDetailsModal: React.FC<{
     
     const [managedKeys, setManagedKeys] = useState((user.managedApiKeys || []).join('\n'));
 
-    // Sync state with prop changes to ensure the modal reflects the latest data after a save.
     useEffect(() => {
         setManagedKeys((user.managedApiKeys || []).join('\n'));
     }, [user.managedApiKeys]);
@@ -227,7 +204,10 @@ const UserDetailsModal: React.FC<{
                         <div className="space-y-1">
                             <div className="flex justify-between text-sm font-medium">
                                 <span className="text-purple-300">{user.usage.ttsCharacters.toLocaleString()}</span>
-                                <span className="text-gray-400">{limit === Infinity ? 'Vô hạn' : `/ ${limit.toLocaleString()} ký tự`}</span>
+                                <span className="text-gray-400">
+                                    <span className={`font-semibold ${TIER_COLORS[user.tier]}`}>{user.tier}</span>
+                                    {limit === Infinity ? ' / Vô hạn' : ` / ${limit.toLocaleString()} ký tự`}
+                                </span>
                             </div>
                             <div className="w-full bg-gray-700 rounded-full h-2.5">
                                 <div className="bg-purple-600 h-2.5 rounded-full" style={{ width: `${usagePercentage}%` }}></div>
@@ -238,13 +218,30 @@ const UserDetailsModal: React.FC<{
                     {isManagedTier && (
                         <div>
                             <h4 className="text-sm font-medium text-gray-400 mb-2">API Keys được Quản lý</h4>
+                            
+                            <div className="mb-3 p-3 bg-gray-900 rounded-md border border-gray-700">
+                                <h5 className="text-xs font-semibold text-gray-300 mb-2">Các Keys đang hoạt động ({user.managedApiKeys?.length || 0}):</h5>
+                                {user.managedApiKeys && user.managedApiKeys.length > 0 ? (
+                                    <ul className="space-y-1">
+                                        {user.managedApiKeys.map((key, index) => (
+                                            <li key={index} className="font-mono text-xs text-cyan-400 bg-gray-800/50 px-2 py-1 rounded-sm">
+                                                {key.length > 6 ? `${key.substring(0, 2)}...${key.slice(-4)}` : key}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="text-xs text-gray-500">Chưa có key nào được gán.</p>
+                                )}
+                            </div>
+
                             <textarea
                                 value={managedKeys}
                                 onChange={(e) => setManagedKeys(e.target.value)}
-                                placeholder="Dán các API key vào đây, mỗi key một dòng."
+                                placeholder="Dán các API key vào đây để cập nhật hoặc thêm mới, mỗi key một dòng."
                                 className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 resize-y focus:ring-2 focus:ring-purple-500 font-mono text-sm"
                                 rows={4}
                             />
+                             <p className="text-xs text-gray-500 mt-1">Lưu ý: Việc lưu sẽ ghi đè toàn bộ danh sách key hiện có bằng nội dung bên trên.</p>
                         </div>
                     )}
                 </div>
@@ -274,6 +271,7 @@ interface AdminTabProps {
 const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
     const [users, setUsers] = useState<Omit<User, 'password'>[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [savingUserId, setSavingUserId] = useState<string | null>(null);
     const [tierFilter, setTierFilter] = useState<string>('all');
     const [usernameFilter, setUsernameFilter] = useState<string>('');
     const [sortColumn, setSortColumn] = useState<string>('username');
@@ -353,21 +351,19 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
     }, [users, tierFilter, usernameFilter, sortColumn, sortDirection]);
 
     const handleSaveUser = async (id: string, updates: Partial<User>) => {
+        setSavingUserId(id);
         try {
            const updatedUser = await updateUserSubscription(id, updates);
            onSetNotification({ type: 'success', message: 'Cập nhật người dùng thành công' });
            
-           // Update user in the list without refetching the whole list
            setUsers(prevUsers => 
                prevUsers.map(u => u.id === id ? { ...u, ...updatedUser } : u)
            );
 
-           // If the modal is open for this user, update its data too
-           if (selectedUser && selectedUser.id === id) {
-               setSelectedUser(prevSelected => prevSelected ? { ...prevSelected, ...updatedUser } : null);
-           }
         } catch (error) {
             onSetNotification({ type: 'error', message: error instanceof Error ? error.message : 'Cập nhật người dùng thất bại' });
+        } finally {
+            setSavingUserId(null);
         }
     };
 
@@ -391,6 +387,9 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
             </button>
         </th>
     );
+    
+    const userForModal = selectedUser ? users.find(u => u.id === selectedUser.id) : null;
+
 
     if (isLoading) {
         return <div className="flex justify-center items-center p-8"><LoadingSpinner className="h-10 w-10" /></div>;
@@ -442,7 +441,14 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
                     </thead>
                     <tbody className="bg-gray-900 divide-y divide-gray-700">
                         {filteredAndSortedUsers.map(user => (
-                           <UserRow key={user.id} user={user} onSave={handleSaveUser} onViewDetails={setSelectedUser} onDelete={handleDeleteUser} />
+                           <UserRow 
+                                key={user.id} 
+                                user={user} 
+                                onSave={handleSaveUser} 
+                                onViewDetails={setSelectedUser} 
+                                onDelete={handleDeleteUser} 
+                                isSaving={savingUserId === user.id}
+                           />
                         ))}
                     </tbody>
                 </table>
@@ -479,7 +485,7 @@ const AdminTab: React.FC<AdminTabProps> = ({ onSetNotification }) => {
                 )}
             </div>
 
-            {selectedUser && <UserDetailsModal user={selectedUser} onClose={() => setSelectedUser(null)} onSave={handleSaveUser} />}
+            {userForModal && <UserDetailsModal user={userForModal} onClose={() => setSelectedUser(null)} onSave={handleSaveUser} />}
         </div>
     );
 };
