@@ -145,7 +145,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                         API Được Quản Lý
                     </div>
                 )}
-                <h3 className="text-sm font-bold text-white text-center pt-2">{details.name}</h3>
+                <h3 className={`text-sm font-bold text-white text-center ${details.kind === 'managed' ? 'pt-4' : 'pt-2'}`}>{details.name}</h3>
                 <p className="text-center text-gray-400 mt-1 text-xs leading-tight">{details.description}</p>
 
                 {/* Price Block */}
