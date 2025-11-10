@@ -117,7 +117,8 @@ export const stitchWavBlobs = async (blobs: Blob[]): Promise<Blob> => {
     if (blobs.length === 1) {
         return blobs[0];
     }
-
+    
+    // Asynchronously read all blobs, strip their headers, and get the raw PCM data.
     const pcmChunksPromises = blobs.map(blob => {
         const headerSize = 44;
         return blob.arrayBuffer().then(buffer => new Uint8Array(buffer.slice(headerSize)));
@@ -125,14 +126,9 @@ export const stitchWavBlobs = async (blobs: Blob[]): Promise<Blob> => {
 
     const pcmChunks = await Promise.all(pcmChunksPromises);
 
-    const totalLength = pcmChunks.reduce((acc, chunk) => acc + chunk.length, 0);
-    const combinedPcm = new Uint8Array(totalLength);
+    // Stitch the raw PCM chunks together into one large buffer.
+    const combinedPcm = stitchPcmChunks(pcmChunks);
 
-    let offset = 0;
-    for (const chunk of pcmChunks) {
-        combinedPcm.set(chunk, offset);
-        offset += chunk.length;
-    }
-
+    // Create a new WAV blob with a single, correct header for the combined data.
     return createWavBlob(combinedPcm);
 };

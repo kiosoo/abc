@@ -5,7 +5,7 @@ import { TTS_VOICES, DEFAULT_VOICE, TIER_LIMITS, TIER_REQUEST_LIMITS, LONG_TEXT_
 import { ChevronDownIcon, LoadingSpinner, DownloadIcon, ErrorIcon, DocumentTextIcon, SystemIcon, InfoIcon, SuccessIcon } from '@/components/Icons.tsx';
 import { reportTtsUsage } from '@/services/apiService.ts';
 import SubscriptionModal from '@/components/SubscriptionModal.tsx';
-import { decode, createWavBlob, stitchWavBlobs, stitchPcmChunks } from '@/utils/audioUtils.ts';
+import { decode, createWavBlob, stitchWavBlobs } from '@/utils/audioUtils.ts';
 import { smartSplit } from '@/utils/textUtils.ts';
 import { getValidatedApiKeyPool } from '@/utils/apiKeyUtils.ts';
 
@@ -179,7 +179,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             addLog(`Tác vụ đã được tạo. Tổng số phần: ${totalChunks}.`, 'info');
             addLog(`Bắt đầu xử lý song song...`, 'system');
 
-            const pcmChunksMap = new Map<number, Uint8Array>();
+            const wavBlobsMap = new Map<number, Blob>();
             let settledCount = 0;
             
             const chunkPromises = Array.from({ length: totalChunks }, (_, chunkIndex) => {
@@ -202,19 +202,20 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                         let pcmData = decode(base64Audio);
                         if (pcmData.length % 2 !== 0) {
                             const logMsg = `Phần ${processedIndex + 1}: Dữ liệu âm thanh có số byte lẻ (${pcmData.length}). Đang thêm byte đệm.`;
-                            console.warn(logMsg); // Also log to console for debugging
+                            console.warn(logMsg);
+                            addLog(logMsg, 'info');
                             const paddedPcmData = new Uint8Array(pcmData.length + 1);
                             paddedPcmData.set(pcmData, 0);
                             pcmData = paddedPcmData;
                         }
-
+                        
                         if (newUsage) onUsageUpdate(newUsage);
-                        return { status: 'fulfilled', value: { pcmData, index: processedIndex } };
+                        const wavBlob = createWavBlob(pcmData);
+                        return { status: 'fulfilled', value: { wavBlob, index: processedIndex } };
                     } catch (e) {
                         const errorMsg = e instanceof Error ? e.message : `Xử lý thất bại.`;
                         return { status: 'rejected', reason: `Phần ${chunkIndex + 1}: ${errorMsg}`, index: chunkIndex };
                     } finally {
-                         // Update progress inside the promise
                         settledCount++;
                         setProgress((settledCount / totalChunks) * 100);
                         setProgressStatus(`Đang xử lý ${settledCount}/${totalChunks} phần...`);
@@ -229,7 +230,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             let successfulChunksCount = 0;
             results.forEach(result => {
                 if (result?.status === 'fulfilled') {
-                    pcmChunksMap.set(result.value.index, result.value.pcmData);
+                    wavBlobsMap.set(result.value.index, result.value.wavBlob);
                     addLog(`Xử lý thành công phần ${result.value.index + 1}.`, 'success');
                     successfulChunksCount++;
                 } else if (result?.status === 'rejected') {
@@ -245,11 +246,44 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             addLog(`Đã xử lý ${successfulChunksCount}/${totalChunks} phần thành công. Đang ghép âm thanh...`, 'system');
             setProgressStatus('Đang hoàn tất...');
 
-            const orderedPcmChunks = Array.from({ length: totalChunks }, (_, i) => pcmChunksMap.get(i)).filter(Boolean) as Uint8Array[];
-            const combinedPcm = stitchPcmChunks(orderedPcmChunks);
-            const wavBlob = createWavBlob(combinedPcm);
-            setFinalAudioBlob(wavBlob);
-            addLog('Âm thanh đã sẵn sàng!', 'success');
+            const orderedWavBlobs = Array.from({ length: totalChunks }, (_, i) => wavBlobsMap.get(i)).filter(Boolean) as Blob[];
+            
+            if (window.Worker) {
+                addLog('Sử dụng Web Worker để ghép nối.', 'system');
+                const worker = new Worker(audioStitcherUrl);
+                const blobsAsArrayBuffers = await Promise.all(orderedWavBlobs.map(b => b.arrayBuffer()));
+                worker.postMessage({ blobsAsArrayBuffers });
+                
+                worker.onmessage = (event) => {
+                    setFinalAudioBlob(event.data);
+                    addLog('Âm thanh đã sẵn sàng!', 'success');
+                    worker.terminate();
+                };
+                worker.onerror = async (err) => {
+                    addLog(`Lỗi worker ghép âm thanh: ${err.message}. Thử lại trên luồng chính...`, 'error');
+                    worker.terminate();
+                    try {
+                        const finalBlob = await stitchWavBlobs(orderedWavBlobs);
+                        setFinalAudioBlob(finalBlob);
+                        addLog('Âm thanh đã sẵn sàng (fallback)!', 'success');
+                    } catch (e) {
+                         const errorMessage = e instanceof Error ? e.message : 'Lỗi không xác định khi ghép fallback.';
+                         setError(errorMessage);
+                         addLog(`Ghép fallback thất bại: ${errorMessage}`, 'error');
+                    }
+                }
+            } else {
+                 addLog('Trình duyệt không hỗ trợ Worker, đang ghép trên luồng chính...', 'info');
+                 try {
+                    const finalBlob = await stitchWavBlobs(orderedWavBlobs);
+                    setFinalAudioBlob(finalBlob);
+                    addLog('Âm thanh đã sẵn sàng (fallback)!', 'success');
+                 } catch (e) {
+                    const errorMessage = e instanceof Error ? e.message : 'Lỗi không xác định khi ghép fallback.';
+                    setError(errorMessage);
+                    addLog(`Ghép fallback thất bại: ${errorMessage}`, 'error');
+                 }
+            }
 
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Đã xảy ra lỗi không xác định.';
@@ -390,6 +424,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             setProgressStatus('Đang hoàn tất...');
 
             if (window.Worker) {
+                addLog('Sử dụng Web Worker để ghép nối.', 'system');
                 const worker = new Worker(audioStitcherUrl);
                 const blobsAsArrayBuffers = await Promise.all(audioBlobs.map(b => b.arrayBuffer()));
                 worker.postMessage({ blobsAsArrayBuffers });
@@ -399,10 +434,30 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                     addLog('Âm thanh đã sẵn sàng!', 'success');
                     worker.terminate();
                 };
+                worker.onerror = async (err) => {
+                    addLog(`Lỗi worker ghép âm thanh: ${err.message}. Thử lại trên luồng chính...`, 'error');
+                    worker.terminate();
+                    try {
+                        const finalBlob = await stitchWavBlobs(audioBlobs);
+                        setFinalAudioBlob(finalBlob);
+                        addLog('Âm thanh đã sẵn sàng (fallback)!', 'success');
+                    } catch (e) {
+                         const errorMessage = e instanceof Error ? e.message : 'Lỗi không xác định khi ghép fallback.';
+                         setError(errorMessage);
+                         addLog(`Ghép fallback thất bại: ${errorMessage}`, 'error');
+                    }
+                }
             } else {
-                 const finalBlob = await stitchWavBlobs(audioBlobs);
-                 setFinalAudioBlob(finalBlob);
-                 addLog('Âm thanh đã sẵn sàng (fallback)!', 'success');
+                 addLog('Trình duyệt không hỗ trợ Worker, đang ghép trên luồng chính...', 'info');
+                 try {
+                    const finalBlob = await stitchWavBlobs(audioBlobs);
+                    setFinalAudioBlob(finalBlob);
+                    addLog('Âm thanh đã sẵn sàng (fallback)!', 'success');
+                 } catch(e) {
+                    const errorMessage = e instanceof Error ? e.message : 'Lỗi không xác định khi ghép fallback.';
+                    setError(errorMessage);
+                    addLog(`Ghép fallback thất bại: ${errorMessage}`, 'error');
+                 }
             }
     
         } catch (e) {

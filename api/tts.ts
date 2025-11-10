@@ -114,7 +114,20 @@ async function handleProcessSingleChunk(req, res, session) {
             if ((currentUsage as number) < TTS_DAILY_API_LIMIT) {
                 try {
                     const result = await generateSpeech(keyEntry.key, chunkText as string, jobData.voice as string);
-                    audioBase64 = result.base64Audio;
+                    
+                    // Defensive check: Ensure raw PCM data has an even number of bytes for 16-bit samples.
+                    // This prevents corruption during client-side stitching if the API returns truncated data.
+                    const pcmData = decode(result.base64Audio);
+                    if (pcmData.length % 2 !== 0) {
+                        console.warn(`Job ${jobId}, chunk ${chunkIndex}: PCM data has odd byte length (${pcmData.length}). Padding to prevent corruption.`);
+                        const paddedPcmData = new Uint8Array(pcmData.length + 1);
+                        paddedPcmData.set(pcmData, 0);
+                        // Re-encode the padded data back to base64
+                        audioBase64 = Buffer.from(paddedPcmData).toString('base64');
+                    } else {
+                        audioBase64 = result.base64Audio;
+                    }
+
                     await kv.hincrby(usageKey, keyEntry.key, 1);
                     
                     // **IMPROVEMENT**: Update the next key index in KV for the next request.
