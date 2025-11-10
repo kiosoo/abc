@@ -138,7 +138,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
         const isCurrentUserTier = userTier === tier;
 
         return (
-            <div className={`flex flex-col rounded-lg p-2 border-2 ${details.style.border} ${details.style.bg} relative`}>
+            <div className={`flex flex-col rounded-lg p-1 border-2 ${details.style.border} ${details.style.bg} relative`}>
                  {details.kind === 'managed' && (
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-purple-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 text-white shadow-lg">
                         <StarIcon className="w-4 h-4" />
@@ -229,7 +229,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                     <p className="text-gray-400 mt-1 text-sm">Chọn gói phù hợp nhất với nhu cầu sử dụng của bạn.</p>
                 </div>
 
-                <div className="p-2">
+                <div className="p-1">
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                         <PlanCard tier={SubscriptionTier.BASIC} />
                         <PlanCard tier={SubscriptionTier.PRO} />
@@ -239,7 +239,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                         <PlanCard tier={SubscriptionTier.VVIP} />
                     </div>
 
-                    <div className="mt-3 p-3 bg-gray-800/50 border border-gray-700 rounded-lg text-sm space-y-3">
+                    <div className="mt-2 p-2 bg-gray-800/50 border border-gray-700 rounded-lg text-sm space-y-3">
                         <h4 className="font-bold text-cyan-400 flex items-center gap-2 text-base">
                             <InfoIcon className="h-5 w-5" />
                             Giải thích về Giới hạn & Hạn ngạch
@@ -247,9 +247,9 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                         <div>
                            <strong className="text-gray-200">Gói Tự quản (Basic, Pro, Ultra):</strong>
                            <ul className="list-disc list-inside text-gray-300 space-y-1 mt-1 pl-2">
-                                <li><strong>Giới hạn ký tự</strong> áp dụng cho độ dài của một lần nhập liệu.</li>
-                                <li>Để xử lý văn bản dài, ứng dụng sẽ tự động <strong className="text-yellow-300">chia nhỏ thành nhiều phần</strong>.</li>
-                                <li><strong className="text-red-400">Quan trọng:</strong> Mỗi phần được xử lý sẽ được tính là <strong className="text-red-400">một lần gọi API</strong>, trừ vào hạn ngạch hàng ngày của API key bạn cung cấp.</li>
+                               <li><strong>Giới hạn ký tự</strong> áp dụng cho độ dài của một lần nhập liệu.</li>
+                               <li>Để xử lý văn bản dài, ứng dụng sẽ tự động <strong className="text-yellow-300">chia nhỏ thành nhiều phần</strong>.</li>
+                               <li><strong className="text-red-400">Quan trọng:</strong> Mỗi phần được xử lý sẽ được tính là <strong className="text-red-400">một lần gọi API</strong>, trừ vào hạn ngạch hàng ngày của API key bạn cung cấp.</li>
                            </ul>
                         </div>
                          <div>

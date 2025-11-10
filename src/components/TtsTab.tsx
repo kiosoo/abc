@@ -544,7 +544,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
 
                     <div className="text-right w-full sm:w-auto space-y-1">
                         <p className="font-mono text-sm text-gray-400">
-                            Ký tự: {isManagedUser ? todaysUsage.ttsCharacters.toLocaleString() : text.length.toLocaleString()} / {getLimitText()}
+                            Ký tự: {text.length.toLocaleString()} / {getLimitText()}
                         </p>
                         {isManagedUser && (
                             <p className="font-mono text-sm text-gray-400">
