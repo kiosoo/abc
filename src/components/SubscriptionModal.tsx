@@ -216,7 +216,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
 
     return (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-6xl relative animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-7xl relative animate-fade-in" onClick={e => e.stopPropagation()}>
                 <style>{`
                     @keyframes fade-in {
                         from { opacity: 0; transform: scale(0.95); }
@@ -229,41 +229,46 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                     <p className="text-gray-400 mt-1 text-sm">Chọn gói phù hợp nhất với nhu cầu sử dụng của bạn.</p>
                 </div>
 
-                <div className="p-1">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                        <PlanCard tier={SubscriptionTier.BASIC} />
-                        <PlanCard tier={SubscriptionTier.PRO} />
-                        <PlanCard tier={SubscriptionTier.ULTRA} />
-                        <PlanCard tier={SubscriptionTier.STAR} />
-                        <PlanCard tier={SubscriptionTier.SUPER_STAR} />
-                        <PlanCard tier={SubscriptionTier.VVIP} />
-                    </div>
+                <div className="p-4 max-h-[calc(100vh-160px)] overflow-y-auto">
+                    <div className="flex flex-col xl:flex-row gap-4">
+                        
+                        {/* Container for plan cards */}
+                        <div className="grid flex-grow grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            <PlanCard tier={SubscriptionTier.BASIC} />
+                            <PlanCard tier={SubscriptionTier.PRO} />
+                            <PlanCard tier={SubscriptionTier.ULTRA} />
+                            <PlanCard tier={SubscriptionTier.STAR} />
+                            <PlanCard tier={SubscriptionTier.SUPER_STAR} />
+                            <PlanCard tier={SubscriptionTier.VVIP} />
+                        </div>
 
-                    <div className="mt-2 p-2 bg-gray-800/50 border border-gray-700 rounded-lg text-sm space-y-3">
-                        <h4 className="font-bold text-cyan-400 flex items-center gap-2 text-base">
-                            <InfoIcon className="h-5 w-5" />
-                            Giải thích về Giới hạn & Hạn ngạch
-                        </h4>
-                        <div>
-                           <strong className="text-gray-200">Gói Tự quản (Basic, Pro, Ultra):</strong>
-                           <ul className="list-disc list-inside text-gray-300 space-y-1 mt-1 pl-2">
-                               <li><strong>Giới hạn ký tự</strong> áp dụng cho độ dài của một lần nhập liệu.</li>
-                               <li>Để xử lý văn bản dài, ứng dụng sẽ tự động <strong className="text-yellow-300">chia nhỏ thành nhiều phần</strong>.</li>
-                               <li><strong className="text-red-400">Quan trọng:</strong> Mỗi phần được xử lý sẽ được tính là <strong className="text-red-400">một lần gọi API</strong>, trừ vào hạn ngạch hàng ngày của API key bạn cung cấp.</li>
-                           </ul>
-                        </div>
-                         <div>
-                            <strong className="text-gray-200">Gói Được quản lý (Star, Super Star & VVIP):</strong>
-                            <ul className="list-disc list-inside text-gray-300 space-y-1 mt-1 pl-2">
-                                <li><strong>Giới hạn ký tự và Lượt tạo</strong> áp dụng cho tổng số lượng bạn có thể xử lý trong một ngày.</li>
-                                <li>Hạn ngạch sẽ hết khi bạn đạt đến giới hạn ký tự <strong className="text-yellow-300">HOẶC</strong> lượt tạo, tùy điều kiện nào đến trước.</li>
-                           </ul>
-                        </div>
-                        <div>
-                            <strong className="text-gray-200">Làm mới Hạn ngạch API:</strong>
-                            <ul className="list-disc list-inside text-gray-300 space-y-1 mt-1 pl-2">
-                                <li>Hạn ngạch miễn phí của mỗi API Key (~15 lượt gọi/ngày) sẽ được <strong className="text-green-400">làm mới vào lúc 15:00 (3 giờ chiều) mỗi ngày</strong> theo giờ Việt Nam.</li>
-                           </ul>
+                        {/* Explanation box - becomes a sidebar on XL screens */}
+                        <div className="xl:w-[360px] xl:flex-shrink-0 p-4 bg-gray-800/50 border border-gray-700 rounded-lg text-sm space-y-3">
+                            <h4 className="font-bold text-cyan-400 flex items-center gap-2 text-base">
+                                <InfoIcon className="h-5 w-5" />
+                                Giải thích về Giới hạn & Hạn ngạch
+                            </h4>
+                            <div>
+                               <strong className="text-gray-200">Gói Tự quản (Basic, Pro, Ultra):</strong>
+                               <ul className="list-disc list-inside text-gray-300 space-y-1 mt-1 pl-2">
+                                   <li><strong>Giới hạn ký tự</strong> áp dụng cho độ dài của một lần nhập liệu.</li>
+                                   <li>Để xử lý văn bản dài, ứng dụng sẽ tự động <strong className="text-yellow-300">chia nhỏ thành nhiều phần</strong>.</li>
+                                   <li><strong className="text-red-400">Quan trọng:</strong> Mỗi phần được xử lý sẽ được tính là <strong className="text-red-400">một lần gọi API</strong>, trừ vào hạn ngạch hàng ngày của API key bạn cung cấp.</li>
+                               </ul>
+                            </div>
+                             <div>
+                                <strong className="text-gray-200">Gói Được quản lý (Star, Super Star & VVIP):</strong>
+                                <ul className="list-disc list-inside text-gray-300 space-y-1 mt-1 pl-2">
+                                    <li><strong>Giới hạn ký tự và Lượt tạo</strong> áp dụng cho tổng số lượng bạn có thể xử lý trong một ngày.</li>
+                                    <li>Hạn ngạch sẽ hết khi bạn đạt đến giới hạn ký tự <strong className="text-yellow-300">HOẶC</strong> lượt tạo, tùy điều kiện nào đến trước.</li>
+                               </ul>
+                            </div>
+                            <div>
+                                <strong className="text-gray-200">Làm mới Hạn ngạch API:</strong>
+                                <ul className="list-disc list-inside text-gray-300 space-y-1 mt-1 pl-2">
+                                    <li>Hạn ngạch miễn phí của mỗi API Key (~15 lượt gọi/ngày) sẽ được <strong className="text-green-400">làm mới vào lúc 15:00 (3 giờ chiều) mỗi ngày</strong> theo giờ Việt Nam.</li>
+                               </ul>
+                            </div>
                         </div>
                     </div>
                 </div>
