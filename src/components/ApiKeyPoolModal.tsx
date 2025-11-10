@@ -108,6 +108,7 @@ const ApiKeyPoolModal: React.FC<ApiKeyPoolModalProps> = ({ onClose, onSetNotific
                         {/* Current Keys Section */}
                         <div className="space-y-3">
                             <h4 className="font-semibold text-gray-200">Keys Hiện có ({apiKeyPool.length})</h4>
+                            <p className="text-xs text-gray-500 -mt-2 mb-3">Hạn ngạch được làm mới hàng ngày lúc 15:00 (giờ Việt Nam).</p>
                             <div className="space-y-2 pr-2">
                                 {apiKeyPool.length > 0 ? (
                                     apiKeyPool.map(entry => (

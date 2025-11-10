@@ -1,5 +1,5 @@
 import { apiHandler } from './_lib/apiHandler.js';
-import { findUserById, updateUser } from './_lib/userManagement.js';
+import { findUserById, updateUser, logTtsUsage } from './_lib/userManagement.js';
 import { smartSplit } from './_lib/textUtils.js';
 import { createClient } from '@vercel/kv';
 import { LONG_TEXT_CHUNK_SIZE, TTS_DAILY_API_LIMIT } from '../src/constants.js';
@@ -14,6 +14,8 @@ const kv = createClient({
 
 const getQuotaDayString = () => {
     const now = new Date();
+    // Quota resets at 15:00 Vietnam time (UTC+7), which is 08:00 UTC.
+    // We adjust the time to get the correct "quota day".
     now.setUTCHours(now.getUTCHours() - 8);
     return now.toISOString().split('T')[0];
 };
@@ -89,13 +91,20 @@ async function handleProcessSingleChunk(req, res, session) {
 
         const todayQuotaStr = getQuotaDayString();
         const usageKey = `keyusage:${user.id}:${todayQuotaStr}`;
+        // **IMPROVEMENT**: Use a persistent index for true round-robin across requests.
+        const nextKeyIndexKey = `user:${user.id}:nextManagedKeyIndex`;
+
 
         let audioBase64 = null;
         let success = false;
         let errorMsg = 'Hết hạn ngạch trên tất cả các key hoặc đã xảy ra lỗi.';
         
-        const startIndex = chunkIndex % keyPool.length;
-        
+        // **IMPROVEMENT**: Fetch the starting index from KV for true round-robin.
+        let startIndex = Number(await kv.get(nextKeyIndexKey) || 0);
+        if (startIndex >= keyPool.length) { // Sanity check
+            startIndex = 0;
+        }
+
         for (let i = 0; i < keyPool.length; i++) {
             const keyIndex = (startIndex + i) % keyPool.length;
             const keyEntry = keyPool[keyIndex];
@@ -107,6 +116,11 @@ async function handleProcessSingleChunk(req, res, session) {
                     const result = await generateSpeech(keyEntry.key, chunkText as string, jobData.voice as string);
                     audioBase64 = result.base64Audio;
                     await kv.hincrby(usageKey, keyEntry.key, 1);
+                    
+                    // **IMPROVEMENT**: Update the next key index in KV for the next request.
+                    const nextIndex = (keyIndex + 1) % keyPool.length;
+                    await kv.set(nextKeyIndexKey, nextIndex);
+
                     success = true;
                     break; 
                 } catch (e) {
@@ -120,8 +134,16 @@ async function handleProcessSingleChunk(req, res, session) {
         }
         
         if (success && audioBase64) {
-             // Return the audio directly to the client
-            res.status(200).json({ base64Audio: audioBase64, chunkIndex: chunkIndex });
+             // Log the usage for this successful chunk
+             const processedChars = (chunkText as string).length;
+             const newUsage = await logTtsUsage(user.id, processedChars, 1);
+             
+             // Return the audio directly to the client, now with updated usage
+            res.status(200).json({ 
+                base64Audio: audioBase64, 
+                chunkIndex: chunkIndex,
+                usage: newUsage
+            });
         } else {
             res.status(500).json({ message: `Xử lý phần ${chunkIndex + 1} thất bại: ${errorMsg}`, chunkIndex: chunkIndex });
         }

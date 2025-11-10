@@ -5,16 +5,86 @@ import { TTS_VOICES, DEFAULT_VOICE, TIER_LIMITS, TIER_REQUEST_LIMITS, LONG_TEXT_
 import { ChevronDownIcon, LoadingSpinner, DownloadIcon, ErrorIcon, DocumentTextIcon, SystemIcon, InfoIcon, SuccessIcon } from '@/components/Icons.tsx';
 import { reportTtsUsage } from '@/services/apiService.ts';
 import SubscriptionModal from '@/components/SubscriptionModal.tsx';
-import { decode, createWavBlob, stitchPcmChunks } from '@/utils/audioUtils.ts';
+import { decode, createWavBlob, stitchWavBlobs, stitchPcmChunks } from '@/utils/audioUtils.ts';
 import { smartSplit } from '@/utils/textUtils.ts';
 import { getValidatedApiKeyPool } from '@/utils/apiKeyUtils.ts';
+
+// A simple worker to offload audio stitching from the main thread
+const audioStitcherCode = `
+  self.onmessage = async (event) => {
+    const { blobsAsArrayBuffers } = event.data;
+    const blobs = blobsAsArrayBuffers.map(b => new Blob([b], { type: 'audio/wav' }));
+    
+    if (blobs.length === 0) {
+        postMessage(new Blob([], { type: 'audio/wav' }));
+        return;
+    }
+    if (blobs.length === 1) {
+        postMessage(blobs[0]);
+        return;
+    }
+
+    const pcmChunksPromises = blobs.map(blob => {
+        const headerSize = 44;
+        return blob.arrayBuffer().then(b => new Uint8Array(b.slice(headerSize)));
+    });
+
+    const pcmChunks = await Promise.all(pcmChunksPromises);
+    
+    const totalLength = pcmChunks.reduce((acc, chunk) => acc + chunk.length, 0);
+    const combinedPcm = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of pcmChunks) {
+        combinedPcm.set(chunk, offset);
+        offset += chunk.length;
+    }
+    
+    const sampleRate = 24000;
+    const numChannels = 1;
+    const header = writeWavHeader(combinedPcm, sampleRate, numChannels);
+    const wavBytes = new Uint8Array(header.length + combinedPcm.length);
+    wavBytes.set(header, 0);
+    wavBytes.set(combinedPcm, header.length);
+
+    postMessage(new Blob([wavBytes], { type: 'audio/wav' }));
+  };
+
+  const writeWavHeader = (samples, sampleRate, numChannels) => {
+    const dataSize = samples.length;
+    const buffer = new ArrayBuffer(44);
+    const view = new DataView(buffer);
+
+    const writeString = (offset, str) => {
+        for (let i = 0; i < str.length; i++) {
+            view.setUint8(offset + i, str.charCodeAt(i));
+        }
+    };
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numChannels * 2, true);
+    view.setUint16(32, numChannels * 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    return new Uint8Array(buffer);
+  };
+`;
+const audioStitcherBlob = new Blob([audioStitcherCode], { type: 'application/javascript' });
+const audioStitcherUrl = URL.createObjectURL(audioStitcherBlob);
 
 
 interface TtsTabProps {
     onSetNotification: (notification: Omit<Notification, 'id'>) => void;
     user: User;
     apiKeyPool: ApiKeyEntry[];
-    // FIX: Corrected typo from ApiKeykeyEntry to ApiKeyEntry.
     setApiKeyPool: (pool: ApiKeyEntry[]) => void;
     onUsageUpdate: (newUsage: User['usage']) => void;
 }
@@ -43,6 +113,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     const [audioUrl, setAudioUrl] = useState<string>('');
     const [finalAudioBlob, setFinalAudioBlob] = useState<Blob | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [isMultilingual, setIsMultilingual] = useState(false);
     
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -50,6 +121,14 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     
     const isManagedUser = [SubscriptionTier.STAR, SubscriptionTier.SUPER_STAR, SubscriptionTier.VVIP].includes(user.tier);
     
+    useEffect(() => {
+        const nonLatinRegex = /[^\u0000-\u007F]+/;
+        const detected = nonLatinRegex.test(text);
+        if (detected !== isMultilingual) {
+            setIsMultilingual(detected);
+        }
+    }, [text, isMultilingual]);
+
     const addLog = (message: string, type: LogEntry['type']) => {
         const timestamp = new Date().toLocaleTimeString('vi-VN', { hour12: false });
         setLogs(prev => [...prev, { id: Date.now() + Math.random(), message, type, timestamp }]);
@@ -79,103 +158,99 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
         resetState();
         setIsProcessing(true);
         addLog('Bắt đầu quá trình tổng hợp (API được quản lý)...', 'system');
-    
+
         let currentJobId: string | null = null;
-    
+
         try {
-            // 1. Start job to get chunk info
             const startRes = await fetch('/api/tts?action=start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text, voice: selectedVoice }),
             });
-    
+
             if (!startRes.ok) {
                 const errorData = await startRes.json();
                 throw new Error(errorData.message || 'Không thể bắt đầu tác vụ TTS.');
             }
-    
+
             const { jobId: newJobId, totalChunks } = await startRes.json();
             currentJobId = newJobId;
-            
+
             addLog(`Tác vụ đã được tạo. Tổng số phần: ${totalChunks}.`, 'info');
+            addLog(`Bắt đầu xử lý song song...`, 'system');
 
-            // 2. Process chunks sequentially with a simple for loop
-            addLog(`Bắt đầu xử lý tuần tự...`, 'system');
             const pcmChunksMap = new Map<number, Uint8Array>();
+            let settledCount = 0;
+            
+            const chunkPromises = Array.from({ length: totalChunks }, (_, chunkIndex) => {
+                return (async () => {
+                    if (isCancelledRef.current) return;
+
+                    try {
+                        const res = await fetch('/api/tts?action=processSingleChunk', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ jobId: newJobId, chunkIndex }),
+                        });
+
+                        if (!res.ok) {
+                            const errorData = await res.json();
+                            throw new Error(errorData.message || `Lỗi không xác định`);
+                        }
+
+                        const { base64Audio, usage: newUsage, chunkIndex: processedIndex } = await res.json();
+                        let pcmData = decode(base64Audio);
+                        if (pcmData.length % 2 !== 0) {
+                            const logMsg = `Phần ${processedIndex + 1}: Dữ liệu âm thanh có số byte lẻ (${pcmData.length}). Đang thêm byte đệm.`;
+                            console.warn(logMsg); // Also log to console for debugging
+                            const paddedPcmData = new Uint8Array(pcmData.length + 1);
+                            paddedPcmData.set(pcmData, 0);
+                            pcmData = paddedPcmData;
+                        }
+
+                        if (newUsage) onUsageUpdate(newUsage);
+                        return { status: 'fulfilled', value: { pcmData, index: processedIndex } };
+                    } catch (e) {
+                        const errorMsg = e instanceof Error ? e.message : `Xử lý thất bại.`;
+                        return { status: 'rejected', reason: `Phần ${chunkIndex + 1}: ${errorMsg}`, index: chunkIndex };
+                    } finally {
+                         // Update progress inside the promise
+                        settledCount++;
+                        setProgress((settledCount / totalChunks) * 100);
+                        setProgressStatus(`Đang xử lý ${settledCount}/${totalChunks} phần...`);
+                    }
+                })();
+            });
+
+            const results = await Promise.all(chunkPromises);
+            
+            if (isCancelledRef.current) throw new Error('Đã hủy tác vụ.');
+
             let successfulChunksCount = 0;
-
-            for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-                if (isCancelledRef.current) {
-                    break;
-                }
-                setProgressStatus(`Đang xử lý phần ${chunkIndex + 1}/${totalChunks}...`);
-                try {
-                    const res = await fetch('/api/tts?action=processSingleChunk', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ jobId: newJobId, chunkIndex }),
-                    });
-
-                    if (!res.ok) {
-                        const errorData = await res.json();
-                        throw new Error(errorData.message || `Lỗi không xác định`);
-                    }
-
-                    const { base64Audio } = await res.json();
-                    pcmChunksMap.set(chunkIndex, decode(base64Audio));
-                    addLog(`Xử lý thành công phần ${chunkIndex + 1}.`, 'success');
+            results.forEach(result => {
+                if (result?.status === 'fulfilled') {
+                    pcmChunksMap.set(result.value.index, result.value.pcmData);
+                    addLog(`Xử lý thành công phần ${result.value.index + 1}.`, 'success');
                     successfulChunksCount++;
-                } catch (e) {
-                    const errorMsg = e instanceof Error ? e.message : `Xử lý thất bại.`;
-                    addLog(`Phần ${chunkIndex + 1}: ${errorMsg}`, 'error');
-                    
-                    const lowerErrorMsg = errorMsg.toLowerCase();
-                    if (lowerErrorMsg.includes('hạn ngạch') || lowerErrorMsg.includes('quota')) {
-                        addLog(`Gợi ý: Các API key từ cùng một dự án Google Cloud sẽ chia sẻ chung một hạn ngạch. Hãy cân nhắc bật thanh toán trên dự án để gỡ bỏ giới hạn.`, 'info');
-                    }
+                } else if (result?.status === 'rejected') {
+                    addLog(result.reason, 'error');
+                    setError(prev => prev ? `${prev}\n- ${result.reason}` : `- ${result.reason}`);
+                }
+            });
 
-                    setError(prev => prev ? `${prev}\n- ${errorMsg}` : `- ${errorMsg}`);
-                } finally {
-                     setProgress(((chunkIndex + 1) / totalChunks) * 100);
-                }
-            }
-    
-            if (isCancelledRef.current) {
-                throw new Error('Đã hủy tác vụ.');
-            }
-    
-            // 3. Report usage based on successful chunks
-            if (successfulChunksCount > 0) {
-                addLog(`Ghi nhận ${successfulChunksCount} yêu cầu thành công vào mức sử dụng...`, 'system');
-                try {
-                    const { usage: newUsage } = await reportTtsUsage(0, successfulChunksCount);
-                    onUsageUpdate(newUsage);
-                } catch (usageError) {
-                    addLog('Không thể ghi nhận mức sử dụng. Vui lòng kiểm tra lại sau.', 'error');
-                }
-            }
-    
             if (successfulChunksCount === 0) {
                 throw new Error("Tất cả các phần đều xử lý thất bại. Không thể tạo file âm thanh.");
             }
-    
-            // 4. Stitch audio
+
             addLog(`Đã xử lý ${successfulChunksCount}/${totalChunks} phần thành công. Đang ghép âm thanh...`, 'system');
             setProgressStatus('Đang hoàn tất...');
-    
-            const orderedPcmChunks: Uint8Array[] = [];
-            for(let i=0; i<totalChunks; i++) {
-                if (pcmChunksMap.has(i)) {
-                    orderedPcmChunks.push(pcmChunksMap.get(i)!);
-                }
-            }
-    
+
+            const orderedPcmChunks = Array.from({ length: totalChunks }, (_, i) => pcmChunksMap.get(i)).filter(Boolean) as Uint8Array[];
             const combinedPcm = stitchPcmChunks(orderedPcmChunks);
             const wavBlob = createWavBlob(combinedPcm);
             setFinalAudioBlob(wavBlob);
             addLog('Âm thanh đã sẵn sàng!', 'success');
-    
+
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Đã xảy ra lỗi không xác định.';
             if (!isCancelledRef.current) {
@@ -189,16 +264,11 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             setIsProcessing(false);
             if (currentJobId) {
                 addLog('Đang dọn dẹp tài nguyên trên server...', 'system');
-                try {
-                    await fetch('/api/tts?action=cleanup', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ jobId: currentJobId }),
-                    });
-                    addLog('Dọn dẹp hoàn tất.', 'info');
-                } catch (cleanupError) {
-                    addLog('Dọn dẹp tài nguyên thất bại.', 'error');
-                }
+                fetch('/api/tts?action=cleanup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jobId: currentJobId }),
+                }).then(() => addLog('Dọn dẹp hoàn tất.', 'info')).catch(() => addLog('Dọn dẹp tài nguyên thất bại.', 'error'));
             }
         }
     }, [text, selectedVoice, onSetNotification, resetState, onUsageUpdate]);
@@ -207,7 +277,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
     const handleGenerateSpeechSelfManaged = useCallback(async () => {
         resetState();
         setIsProcessing(true);
-        addLog('Bắt đầu tổng hợp (sử dụng keys cá nhân)...', 'system');
+        addLog('Bắt đầu tổng hợp (client-side, sử dụng keys cá nhân)...', 'system');
     
         try {
             const characterLimit = TIER_LIMITS[user.tier];
@@ -225,19 +295,17 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
             const chunks = smartSplit(text, LONG_TEXT_CHUNK_SIZE);
             addLog(`Văn bản được chia thành ${chunks.length} phần.`, 'info');
     
-            addLog(`Bắt đầu xử lý tuần tự...`, 'system');
-            const pcmChunksMap = new Map<number, Uint8Array>();
-            let successfulChunksCount = 0;
+            const audioBlobs: Blob[] = [];
             const keyPoolRef = { current: JSON.parse(JSON.stringify(initialKeyPool)) as ApiKeyEntry[] };
             let nextKeyStartIndex = 0;
+            let totalCharsProcessed = 0;
 
             for (const [chunkIndex, chunkText] of chunks.entries()) {
-                if (isCancelledRef.current) {
-                    break;
-                }
+                if (isCancelledRef.current) break;
+                
                 setProgressStatus(`Đang xử lý phần ${chunkIndex + 1}/${chunks.length}...`);
                 let processed = false;
-                let finalError = 'Tất cả các key đều không thể xử lý chunk này.';
+                let finalError = 'Tất cả các key có sẵn đều không thể xử lý phần này.';
 
                 for (let i = 0; i < availableKeys.length; i++) {
                     if (isCancelledRef.current) break;
@@ -268,65 +336,74 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
 
                         if (!base64Audio) throw new Error('API không trả về dữ liệu âm thanh.');
                         
-                        pcmChunksMap.set(chunkIndex, decode(base64Audio));
+                        let pcmData = decode(base64Audio);
+                        // Odd byte count check for PCM data integrity.
+                        if (pcmData.length % 2 !== 0) {
+                            addLog(`Phần ${chunkIndex + 1}: Dữ liệu âm thanh có số byte lẻ (${pcmData.length}). Đang thêm byte đệm để tránh lỗi.`, 'info');
+                            const paddedPcmData = new Uint8Array(pcmData.length + 1);
+                            paddedPcmData.set(pcmData, 0);
+                            pcmData = paddedPcmData;
+                        }
+                        
+                        const wavBlob = createWavBlob(pcmData);
+                        audioBlobs.push(wavBlob);
+                        
                         liveKeyEntry.usage.count++;
-                        successfulChunksCount++;
+                        totalCharsProcessed += chunkText.length;
                         addLog(`Phần ${chunkIndex + 1}: Thành công với key ...${liveKeyEntry.key.slice(-4)}. Lượt dùng: ${liveKeyEntry.usage.count}/${TTS_DAILY_API_LIMIT}.`, 'success');
                         processed = true;
                         nextKeyStartIndex = (keyTryIndex + 1) % availableKeys.length;
-                        break;
+                        break; 
 
                     } catch (e: any) {
                         const errorString = e.toString();
-                        let keyErrorMsg = '';
-                        if (errorString.includes('RESOURCE_EXHAUSTED') || errorString.includes('429')) {
-                            keyErrorMsg = `Key ...${liveKeyEntry.key.slice(-4)} đã hết hạn ngạch.`;
+                        finalError = e instanceof Error ? e.message : String(e);
+                        if (errorString.includes('RESOURCE_EXHAUSTED') || errorString.includes('429') || errorString.includes('API key not valid')) {
                             liveKeyEntry.usage.count = TTS_DAILY_API_LIMIT;
-                        } else {
-                            keyErrorMsg = `Lỗi với key ...${liveKeyEntry.key.slice(-4)}: ${e.message}`;
+                            finalError = errorString.includes('API key not valid') ? `Key ...${liveKeyEntry.key.slice(-4)} không hợp lệ.` :`Key ...${liveKeyEntry.key.slice(-4)} đã hết hạn ngạch.`;
                         }
-                        addLog(`Phần ${chunkIndex + 1}: ${keyErrorMsg} Đang thử key tiếp theo...`, 'info');
-                        finalError = keyErrorMsg;
+                        addLog(`Phần ${chunkIndex + 1}: ${finalError} Đang thử key tiếp theo...`, 'info');
                     }
-                } 
+                }
 
                 if (!processed && !isCancelledRef.current) {
-                    const finalLogMessage = `Phần ${chunkIndex + 1}: Xử lý thất bại. Lỗi cuối cùng: ${finalError}`;
+                    const finalLogMessage = `Phần ${chunkIndex + 1}: Xử lý thất bại. ${finalError}`;
                     addLog(finalLogMessage, 'error');
-                    
-                    const lowerFinalError = finalError.toLowerCase();
-                    if (lowerFinalError.includes('hạn ngạch') || lowerFinalError.includes('quota')) {
-                        addLog(`Gợi ý: Các API key từ cùng một dự án Google Cloud sẽ chia sẻ chung một hạn ngạch. Hãy cân nhắc bật thanh toán trên dự án để gỡ bỏ giới hạn.`, 'info');
-                    }
-
                     setError(prev => (prev ? prev + `\n- ${finalLogMessage}` : `- ${finalLogMessage}`));
                 }
-                
+
                 setProgress(((chunkIndex + 1) / chunks.length) * 100);
+                await new Promise(resolve => setTimeout(resolve, 200)); // Rate limit buffer
             }
     
             if (isCancelledRef.current) throw new Error('Đã hủy tác vụ.');
     
             setApiKeyPool([...keyPoolRef.current]);
-    
-            if (successfulChunksCount === 0) {
-                throw new Error("Tất cả các phần đều xử lý thất bại. Không thể tạo file âm thanh.");
+
+            if (audioBlobs.length > 0) {
+                reportTtsUsage(totalCharsProcessed, audioBlobs.length).then(({ usage }) => onUsageUpdate(usage));
+            } else {
+                 throw new Error("Tất cả các phần đều xử lý thất bại. Không thể tạo file âm thanh.");
             }
             
-            addLog(`Đã xử lý ${successfulChunksCount}/${chunks.length} phần thành công. Đang ghép âm thanh...`, 'system');
+            addLog(`Đã xử lý ${audioBlobs.length}/${chunks.length} phần thành công. Đang ghép âm thanh...`, 'system');
             setProgressStatus('Đang hoàn tất...');
-    
-            const orderedPcmChunks: Uint8Array[] = [];
-            for(let i=0; i<chunks.length; i++) {
-                if (pcmChunksMap.has(i)) {
-                    orderedPcmChunks.push(pcmChunksMap.get(i)!);
-                }
+
+            if (window.Worker) {
+                const worker = new Worker(audioStitcherUrl);
+                const blobsAsArrayBuffers = await Promise.all(audioBlobs.map(b => b.arrayBuffer()));
+                worker.postMessage({ blobsAsArrayBuffers });
+                
+                worker.onmessage = (event) => {
+                    setFinalAudioBlob(event.data);
+                    addLog('Âm thanh đã sẵn sàng!', 'success');
+                    worker.terminate();
+                };
+            } else {
+                 const finalBlob = await stitchWavBlobs(audioBlobs);
+                 setFinalAudioBlob(finalBlob);
+                 addLog('Âm thanh đã sẵn sàng (fallback)!', 'success');
             }
-    
-            const combinedPcm = stitchPcmChunks(orderedPcmChunks);
-            const wavBlob = createWavBlob(combinedPcm);
-            setFinalAudioBlob(wavBlob);
-            addLog('Âm thanh đã sẵn sàng!', 'success');
     
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Đã xảy ra lỗi không xác định.';
@@ -340,7 +417,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
         } finally {
             setIsProcessing(false);
         }
-    }, [text, selectedVoice, onSetNotification, resetState, user, apiKeyPool, setApiKeyPool]);
+    }, [text, selectedVoice, onSetNotification, resetState, user, apiKeyPool, setApiKeyPool, onUsageUpdate]);
 
     const handleGenerateSpeech = () => {
         if (isManagedUser) {
@@ -462,7 +539,7 @@ const TtsTab: React.FC<TtsTabProps> = ({ onSetNotification, user, apiKeyPool, se
                             ))}
                         </select>
                         <ChevronDownIcon className="h-5 w-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <p className="text-xs text-gray-500 mt-1.5 px-1">Tất cả giọng đọc đều hỗ trợ Tiếng Việt, Anh, Nhật, Hàn, Trung.</p>
+                        {isMultilingual && <p className="text-xs text-cyan-400 mt-1.5 px-1">Đã phát hiện văn bản đa ngôn ngữ. Giọng 'Tự động' được khuyến nghị.</p>}
                     </div>
 
                     <div className="text-right w-full sm:w-auto space-y-1">

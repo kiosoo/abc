@@ -40,11 +40,16 @@ export const decode = (base64: string): Uint8Array => {
     return bytes;
 };
 
-export const createWavBuffer = (pcmData: Uint8Array): Buffer => {
+// FIX: Replaced Node.js 'Buffer' with 'Uint8Array' to resolve type errors in serverless environment.
+// The function now returns a Uint8Array which is universally supported.
+export const createWavBuffer = (pcmData: Uint8Array): Uint8Array => {
     const sampleRate = 24000;
     const numChannels = 1;
     const header = writeWavHeader(pcmData, sampleRate, numChannels);
-    return Buffer.concat([Buffer.from(header), Buffer.from(pcmData)]);
+    const wavBytes = new Uint8Array(header.length + pcmData.length);
+    wavBytes.set(header, 0);
+    wavBytes.set(pcmData, header.length);
+    return wavBytes;
 };
 
 export const stitchPcmChunks = (pcmChunks: Uint8Array[]): Uint8Array => {

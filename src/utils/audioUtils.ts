@@ -110,8 +110,6 @@ export const stitchPcmChunks = (pcmChunks: Uint8Array[]): Uint8Array => {
     return combinedPcm;
 };
 
-// FIX: Made function asynchronous to use blob.arrayBuffer() which is async,
-// replacing FileReaderSync which is only available in workers.
 export const stitchWavBlobs = async (blobs: Blob[]): Promise<Blob> => {
     if (blobs.length === 0) {
         return new Blob([], { type: 'audio/wav' });
@@ -121,8 +119,6 @@ export const stitchWavBlobs = async (blobs: Blob[]): Promise<Blob> => {
     }
 
     const pcmChunksPromises = blobs.map(blob => {
-        // Simple and slightly risky assumption: header is 44 bytes.
-        // This works for our controlled `createWavBlob` output.
         const headerSize = 44;
         return blob.arrayBuffer().then(buffer => new Uint8Array(buffer.slice(headerSize)));
     });

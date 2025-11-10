@@ -1,4 +1,3 @@
-
 import React from 'react';
 // FIX: Add file extensions to imports to resolve module loading errors.
 import { SubscriptionTier } from '@/types.ts';
@@ -170,18 +169,18 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                 </div>
 
                 {/* Limit Info Block */}
-                <div className="my-1 text-center">
+                <div className="my-1 text-center min-h-[40px] flex flex-col justify-center">
                     {details.kind === 'managed' ? (
                         <>
                             <span className="text-base font-bold text-white">{details.limitText}</span>
                             <span className="block text-xs font-medium text-gray-400">{details.subtext}</span>
                         </>
-                    ) : details.kind === 'standard' && tier !== SubscriptionTier.BASIC ? (
+                    ) : details.kind === 'standard' ? (
                          <>
                             <span className="text-base font-bold text-white">{details.limit === Infinity ? 'Vô hạn' : details.limit.toLocaleString()}</span>
-                            <span className="block text-xs font-medium text-gray-400"> ký tự / lần nhập</span>
+                            <span className="block text-xs font-medium text-gray-400">ký tự / lần nhập</span>
                         </>
-                    ) : <div className="h-6" />}
+                    ) : null}
                 </div>
 
 
@@ -240,24 +239,32 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ onClose, userTier
                         <PlanCard tier={SubscriptionTier.VVIP} />
                     </div>
 
-                    <div className="mt-3 p-3 bg-gray-800/50 border border-gray-700 rounded-lg text-sm">
-                        <h4 className="font-bold text-cyan-400 mb-2 flex items-center gap-2">
+                    <div className="mt-3 p-3 bg-gray-800/50 border border-gray-700 rounded-lg text-sm space-y-3">
+                        <h4 className="font-bold text-cyan-400 flex items-center gap-2 text-base">
                             <InfoIcon className="h-5 w-5" />
-                            Giải thích về Giới hạn
+                            Giải thích về Giới hạn & Hạn ngạch
                         </h4>
-                        <p className="text-gray-300 mb-2">
-                           <strong>Đối với các gói Basic, Pro, Ultra:</strong> Giới hạn ký tự áp dụng cho độ dài của một lần nhập liệu. Năng suất thực tế phụ thuộc vào số lượng API key Gemini bạn cung cấp.
-                        </p>
-                         <p className="text-gray-300 mb-2">
-                           <strong>Đối với các gói Star, Super Star & VVIP:</strong> Giới hạn ký tự áp dụng cho tổng số lượng bạn có thể xử lý trong một ngày.
-                        </p>
-                        <p className="text-yellow-300/80 mb-2">
-                           <strong>Quy tắc Hạn ngạch Gói Được Quản Lý:</strong> Hạn ngạch hàng ngày của bạn sẽ hết khi bạn đạt đến <strong>giới hạn ký tự</strong> HOẶC <strong>số lần tạo âm thanh</strong>, tùy điều kiện nào đến trước. Ví dụ: gói Star có giới hạn 140,000 ký tự và 30 lần tạo âm thanh. Nếu bạn thực hiện 30 yêu cầu nhỏ, hạn ngạch trong ngày sẽ hết ngay cả khi chưa dùng hết giới hạn ký tự.
-                        </p>
-                        <ul className="list-disc list-inside text-gray-400 space-y-1">
-                            <li>Một API Key có giới hạn, Ứng dụng sẽ tự động quản lý giới hạn này cho bạn.</li>
-                            <li>Bạn có thể thêm nhiều key trong phần "Quản lý API Keys" (đối với gói tự quản) để tăng tổng hạn ngạch.</li>
-                        </ul>
+                        <div>
+                           <strong className="text-gray-200">Gói Tự quản (Basic, Pro, Ultra):</strong>
+                           <ul className="list-disc list-inside text-gray-300 space-y-1 mt-1 pl-2">
+                                <li><strong>Giới hạn ký tự</strong> áp dụng cho độ dài của một lần nhập liệu.</li>
+                                <li>Để xử lý văn bản dài, ứng dụng sẽ tự động <strong className="text-yellow-300">chia nhỏ thành nhiều phần</strong>.</li>
+                                <li><strong className="text-red-400">Quan trọng:</strong> Mỗi phần được xử lý sẽ được tính là <strong className="text-red-400">một lần gọi API</strong>, trừ vào hạn ngạch hàng ngày của API key bạn cung cấp.</li>
+                           </ul>
+                        </div>
+                         <div>
+                            <strong className="text-gray-200">Gói Được quản lý (Star, Super Star & VVIP):</strong>
+                            <ul className="list-disc list-inside text-gray-300 space-y-1 mt-1 pl-2">
+                                <li><strong>Giới hạn ký tự và Lượt tạo</strong> áp dụng cho tổng số lượng bạn có thể xử lý trong một ngày.</li>
+                                <li>Hạn ngạch sẽ hết khi bạn đạt đến giới hạn ký tự <strong className="text-yellow-300">HOẶC</strong> lượt tạo, tùy điều kiện nào đến trước.</li>
+                           </ul>
+                        </div>
+                        <div>
+                            <strong className="text-gray-200">Làm mới Hạn ngạch API:</strong>
+                            <ul className="list-disc list-inside text-gray-300 space-y-1 mt-1 pl-2">
+                                <li>Hạn ngạch miễn phí của mỗi API Key (~15 lượt gọi/ngày) sẽ được <strong className="text-green-400">làm mới vào lúc 15:00 (3 giờ chiều) mỗi ngày</strong> theo giờ Việt Nam.</li>
+                           </ul>
+                        </div>
                     </div>
                 </div>
                  <div className="p-3 bg-gray-900/50 text-right rounded-b-xl border-t border-gray-700">
